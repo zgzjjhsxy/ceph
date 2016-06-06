@@ -41,6 +41,9 @@
 
 #include "rgw_coroutine.h"
 
+#include "rgw_boost_asio_yield.h"
+#undef fork // fails to compile RGWPeriod::fork() below
+
 #include "common/Clock.h"
 
 #include "include/rados/librados.hpp"
@@ -3018,6 +3021,33 @@ public:
   }
 };
 
+class RGWSyncLogTrimThread : public RGWSyncProcessorThread
+{
+  RGWCoroutinesManager crs;
+  RGWRados *store;
+  RGWHTTPManager http;
+  const utime_t trim_interval;
+
+  uint64_t interval_msec() override { return 0; }
+  void stop_process() override { crs.stop(); }
+public:
+  RGWSyncLogTrimThread(RGWRados *store, int interval)
+    : RGWSyncProcessorThread(store), crs(store->ctx(), nullptr), store(store),
+      http(store->ctx(), crs.get_completion_mgr()),
+      trim_interval(interval, 0)
+  {}
+
+  int init() override {
+    return http.set_threaded();
+  }
+  int process() override {
+    crs.run(new RGWDataLogTrimCR(store, &http,
+                                 cct->_conf->rgw_data_log_num_shards,
+                                 trim_interval));
+    return 0;
+  }
+};
+
 void RGWRados::wakeup_meta_sync_shards(set<int>& shard_ids)
 {
   Mutex::Locker l(meta_sync_thread_lock);
@@ -3134,6 +3164,9 @@ void RGWRados::finalize()
       RGWDataSyncProcessorThread *thread = iter.second;
       thread->stop();
     }
+    if (sync_log_trimmer) {
+      sync_log_trimmer->stop();
+    }
   }
   if (async_rados) {
     async_rados->stop();
@@ -3147,6 +3180,8 @@ void RGWRados::finalize()
       delete thread;
     }
     data_sync_processor_threads.clear();
+    delete sync_log_trimmer;
+    sync_log_trimmer = nullptr;
   }
   if (finisher) {
     finisher->stop();
@@ -3905,7 +3940,7 @@ int RGWRados::init_complete()
     meta_sync_processor_thread = new RGWMetaSyncProcessorThread(this, async_rados);
     ret = meta_sync_processor_thread->init();
     if (ret < 0) {
-      ldout(cct, 0) << "ERROR: failed to initialize" << dendl;
+      ldout(cct, 0) << "ERROR: failed to initialize meta sync thread" << dendl;
       return ret;
     }
     meta_sync_processor_thread->start();
@@ -3916,11 +3951,21 @@ int RGWRados::init_complete()
       RGWDataSyncProcessorThread *thread = new RGWDataSyncProcessorThread(this, async_rados, iter->first);
       ret = thread->init();
       if (ret < 0) {
-        ldout(cct, 0) << "ERROR: failed to initialize" << dendl;
+        ldout(cct, 0) << "ERROR: failed to initialize data sync thread" << dendl;
         return ret;
       }
       thread->start();
       data_sync_processor_threads[iter->first] = thread;
+    }
+    auto interval = cct->_conf->rgw_sync_log_trim_interval;
+    if (interval > 0) {
+      sync_log_trimmer = new RGWSyncLogTrimThread(this, interval);
+      ret = sync_log_trimmer->init();
+      if (ret < 0) {
+        ldout(cct, 0) << "ERROR: failed to initialize sync log trim thread" << dendl;
+        return ret;
+      }
+      sync_log_trimmer->start();
     }
   }
   data_notifier = new RGWDataNotifier(this);
