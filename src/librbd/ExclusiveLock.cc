@@ -251,6 +251,40 @@ void ExclusiveLock<I>::handle_peer_notification(int r) {
 }
 
 template <typename I>
+int ExclusiveLock<I>::assert_header_locked() {
+  CephContext *cct = m_image_ctx.cct;
+  ldout(cct, 10) << dendl;
+
+  librados::ObjectReadOperation op;
+  {
+    Mutex::Locker locker(m_lock);
+    rados::cls::lock::assert_locked(&op, RBD_LOCK_NAME, LOCK_EXCLUSIVE,
+                                    m_cookie, WATCHER_LOCK_TAG);
+  }
+
+  int r = m_image_ctx.md_ctx.operate(m_image_ctx.header_oid, &op, nullptr);
+  if (r < 0) {
+    if (r == -EBLACKLISTED) {
+      ldout(cct, 5) << "client is not lock owner -- client blacklisted"
+                    << dendl;
+    } else if (r == -ENOENT) {
+      ldout(cct, 5) << "client is not lock owner -- no lock detected"
+                    << dendl;
+    } else if (r == -EBUSY) {
+      ldout(cct, 5) << "client is not lock owner -- owned by different client"
+                    << dendl;
+    } else {
+      lderr(cct) << "failed to verify lock ownership: " << cpp_strerror(r)
+                 << dendl;
+    }
+
+    return r;
+  }
+
+  return 0;
+}
+
+template <typename I>
 void ExclusiveLock<I>::assert_header_locked(librados::ObjectWriteOperation *op) {
   Mutex::Locker locker(m_lock);
   rados::cls::lock::assert_locked(op, RBD_LOCK_NAME, LOCK_EXCLUSIVE,
