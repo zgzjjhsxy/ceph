@@ -139,6 +139,8 @@ public:
 
   virtual bool check(std::ostream &out) { return true; }
 
+  virtual void compact() {}
+
   typedef KeyValueDB::GenericIteratorImpl ObjectMapIteratorImpl;
   typedef ceph::shared_ptr<ObjectMapIteratorImpl> ObjectMapIterator;
   virtual ObjectMapIterator get_iterator(const ghobject_t &oid) {
