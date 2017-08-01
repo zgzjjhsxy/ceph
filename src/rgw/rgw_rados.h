@@ -1780,6 +1780,7 @@ class RGWRados
   friend class RGWDataSyncProcessorThread;
   friend class RGWStateLog;
   friend class RGWReplicaLogger;
+  friend class RGWCompleteMultipart;
 
   /** Open the pool used as root for this gateway */
   int open_root_pool_ctx();
