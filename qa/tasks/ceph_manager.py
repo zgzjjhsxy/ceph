@@ -113,6 +113,7 @@ class Thrasher:
         self.clean_wait = self.config.get('clean_wait', 0)
         self.minin = self.config.get("min_in", 3)
         self.chance_move_pg = self.config.get('chance_move_pg', 1.0)
+        self.convert_leveldb_chance = config.get('convert_leveldb_to_rocksdb', 0.0)
         self.sighup_delay = self.config.get('sighup_delay')
 
         num_osds = self.in_osds + self.out_osds
@@ -484,6 +485,34 @@ class Thrasher:
         self.log("fixing pg num pool %s" % (pool,))
         self.ceph_manager.set_pool_pgpnum(pool)
 
+    def convert_leveldb_osd(self):
+        """
+        convert an osd to rocksdb
+        """
+        osd = self.ceph_manager.get_leveldb_osd()
+        if osd is None:
+            self.log('no filestore osds using leveldb left')
+            self.convert_leveldb_chance = 0.0
+            return
+
+        self.log('converting osd.%d from leveldb to rocksdb' % osd)
+        if osd in self.live_osds:
+            self.kill_osd(osd)
+        remote = self.ceph_manager.find_remote('osd', osd)
+        osd_path = self.ceph_manager.get_filepath().format(id=osd)
+        remote.run(args=['sudo', 'sed', '-i', 's/leveldb/rocksdb/g',
+                         os.path.join(osd_path, 'superblock')])
+        remote.run(args=['sudo', 'mv', os.path.join(osd_path, 'current', 'omap'),
+                         os.path.join(osd_path, 'current', 'omap.orig')])
+        remote.run(args=['sudo', 'ceph-kvstore-tool', 'leveldb',
+                         os.path.join(osd_path, 'current', 'omap.orig'),
+                         'store-copy', os.path.join(osd_path, 'current', 'omap'),
+                         '8192', 'rocksdb'])
+        remote.run(args=['sudo', 'rm', '-rf', '--', os.path.join(osd_path, 'current', 'omap.orig')])
+
+        if osd in self.dead_osds:
+            self.revive_osd(osd)
+
     def test_pool_min_size(self):
         """
         Kill and revive all osds except one.
@@ -638,6 +667,8 @@ class Thrasher:
             actions.append((self.revive_osd, 1.0,))
         if self.config.get('thrash_primary_affinity', True):
             actions.append((self.primary_affinity, 1.0,))
+        if self.convert_leveldb_chance > 0:
+            actions.append((self.convert_leveldb_osd, self.convert_leveldb_chance))
         actions.append((self.reweight_osd,
                         self.config.get('reweight_osd', .5),))
         actions.append((self.grow_pool,
@@ -814,6 +845,7 @@ class CephManager:
         self.controller = controller
         self.next_pool_id = 0
         self.cluster = cluster
+        self.all_leveldb_converted = False
         if (logger):
             self.log = lambda x: logger.info(x)
         else:
@@ -1067,6 +1099,26 @@ class CephManager:
             if pg['pgid'] == pg_str:
                 return int(pg['acting'][0])
         assert False
+
+    def get_leveldb_osd(self):
+        """
+        returns the first filestore osd using leveldb or None
+        """
+        output = self.raw_cluster_cmd('osd', 'metadata', '--format=json')
+        j = json.loads('\n'.join(output.split('\n')[1:]))
+        for osd_meta in j:
+            if osd_meta['osd_objectstore'] != 'filestore':
+                continue
+            osd = osd_meta['id']
+            remote = self.find_remote('osd', osd)
+            superblock = os.path.join(self.get_filepath().format(id=osd),
+                                      'superblock')
+            try:
+                remote.run(args=['sudo', 'grep', '-q', 'leveldb', superblock])
+                return osd
+            except CommandFailedError:
+                continue
+        return None
 
     def get_pool_num(self, pool):
         """
