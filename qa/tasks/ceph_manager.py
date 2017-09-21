@@ -1108,7 +1108,11 @@ class CephManager:
 
         log.info('converting osd.%d from leveldb to rocksdb', osd)
         self.kill_osd(osd)
-        remote.run(args=['sudo', 'sed', '-i', 's/leveldb/rocksdb/g', superblock])
+        try:
+            remote.run(args=['sudo', 'sed', '-i', 's/leveldb/rocksdb/g', superblock])
+        except:
+            from teuthology.task import interactive
+            interactive.task(self.ctx, config=None)
         if remote.os.package_type == 'deb':
             # newer versions of leveldb name table files .ldb instead
             # of .sst, so we need to rename them to what rocksdb
