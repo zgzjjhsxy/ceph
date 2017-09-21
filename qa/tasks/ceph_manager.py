@@ -113,6 +113,7 @@ class Thrasher:
         self.clean_wait = self.config.get('clean_wait', 0)
         self.minin = self.config.get("min_in", 3)
         self.chance_move_pg = self.config.get('chance_move_pg', 1.0)
+        self.convert_leveldb_chance = 100.0
         self.sighup_delay = self.config.get('sighup_delay')
 
         num_osds = self.in_osds + self.out_osds
@@ -495,6 +496,35 @@ class Thrasher:
         self.log("fixing pg num pool %s" % (pool,))
         self.ceph_manager.set_pool_pgpnum(pool)
 
+    def convert_leveldb_osd(self):
+        """
+        convert an osd to rocksdb
+        """
+        osd = self.ceph_manager.get_leveldb_osd()
+        if osd is None:
+            self.log('no filestore osds using leveldb left')
+            self.convert_leveldb_chance = 0.0
+            return
+
+        self.log('converting osd.%d from leveldb to rocksdb' % osd)
+        self.kill_osd(osd)
+        remote = self.ceph_manager.find_remote('osd', osd)
+        remote.run(args=['sudo', 'ceph-osd', '-c', self.cluster, '-i', str(osd),
+                         '--flush-journal'])
+        remote.run(args=['sudo', 'sed', '-i', 's/leveldb/rocksdb/g',
+                         os.path.join(self.ceph_manager.get_filepath().format(id=osd),
+                                      'superblock')])
+        if remote.os.package_type == 'deb':
+            # newer versions of leveldb name table files .ldb instead
+            # of .sst, so we need to rename them to what rocksdb
+            # expects. Note that this uses perl's rename utility,
+            # which is only installed by default on debian-based
+            # systems
+            remote.run(args=['sudo', 'rename', 's/ldb/sst/',
+                             run.Raw(os.path.join(self.ceph_manager.get_filepath().format(id=osd),
+                                                  'current', 'omap') + '/*.ldb')])
+        self.revive_osd(osd)
+
     def test_pool_min_size(self):
         """
         Kill and revive all osds except one.
@@ -650,7 +680,7 @@ class Thrasher:
         if self.config.get('thrash_primary_affinity', True):
             actions.append((self.primary_affinity, 1.0,))
         if self.config.get('convert_leveldb_to_rocksdb', False):
-            actions.append((self.ceph_manager.convert_leveldb_osd, 100.0))
+            actions.append((self.convert_leveldb_osd, self.convert_leveldb_chance))
         actions.append((self.reweight_osd,
                         self.config.get('reweight_osd', .5),))
         actions.append((self.grow_pool,
@@ -827,6 +857,7 @@ class CephManager:
         self.controller = controller
         self.next_pool_id = 0
         self.cluster = cluster
+        self.all_leveldb_converted = False
         if (logger):
             self.log = lambda x: logger.info(x)
         else:
@@ -1081,13 +1112,12 @@ class CephManager:
                 return int(pg['acting'][0])
         assert False
 
-    def convert_leveldb_osd(self):
+    def get_leveldb_osd(self):
         """
-        convert the first filestore osd using leveldb to rocksdb
+        returns the first filestore osd using leveldb or None
         """
         output = self.raw_cluster_cmd('osd', 'metadata', '--format=json')
         j = json.loads('\n'.join(output.split('\n')[1:]))
-        found_osd = False
         for osd_meta in j:
             if osd_meta['osd_objectstore'] != 'filestore':
                 continue
@@ -1097,31 +1127,10 @@ class CephManager:
                                       'superblock')
             try:
                 remote.run(args=['sudo', 'grep', '-q', 'leveldb', superblock])
-                found_osd = True
-                break
+                return osd
             except CommandFailedError:
                 continue
-
-        if not found_osd:
-            log.debug('no filestore osds using leveldb left')
-            return
-
-        log.info('converting osd.%d from leveldb to rocksdb', osd)
-        self.kill_osd(osd)
-        try:
-            remote.run(args=['sudo', 'sed', '-i', 's/leveldb/rocksdb/g', superblock])
-        except:
-            from teuthology.task import interactive
-            interactive.task(self.ctx, config=None)
-        if remote.os.package_type == 'deb':
-            # newer versions of leveldb name table files .ldb instead
-            # of .sst, so we need to rename them to what rocksdb
-            # expects Note that this uses perl's rename utility, only
-            # installed by default on debian-based systems
-            remote.run(args=['sudo', 'rename', 's/.ldb/.sst/',
-                             run.Raw(os.path.join(self.get_filepath().format(id=osd),
-                                                  'current', 'omap') + '/*.ldb')])
-        self.revive_osd(osd)
+        return None
 
     def get_pool_num(self, pool):
         """
