@@ -649,6 +649,8 @@ class Thrasher:
             actions.append((self.revive_osd, 1.0,))
         if self.config.get('thrash_primary_affinity', True):
             actions.append((self.primary_affinity, 1.0,))
+        if self.config.get('convert_leveldb_to_rocksdb', False):
+            actions.append((self.ceph_manager.convert_leveldb_osd, 100.0))
         actions.append((self.reweight_osd,
                         self.config.get('reweight_osd', .5),))
         actions.append((self.grow_pool,
@@ -1078,6 +1080,44 @@ class CephManager:
             if pg['pgid'] == pg_str:
                 return int(pg['acting'][0])
         assert False
+
+    def convert_leveldb_osd(self):
+        """
+        convert the first filestore osd using leveldb to rocksdb
+        """
+        output = self.raw_cluster_cmd('osd', 'metadata', '--format=json')
+        j = json.loads('\n'.join(output.split('\n')[1:]))
+        found_osd = False
+        for osd_meta in j:
+            if osd_meta['osd_objectstore'] != 'filestore':
+                continue
+            osd = osd_meta['id']
+            remote = self.find_remote('osd', osd)
+            superblock = os.path.join(self.get_filepath().format(id=osd),
+                                      'superblock')
+            try:
+                remote.run(args=['sudo', 'grep', '-q', 'leveldb', superblock])
+                found_osd = True
+                break
+            except CommandFailedError:
+                continue
+
+        if not found_osd:
+            log.debug('no filestore osds using leveldb left')
+            return
+
+        log.info('converting osd.%d from leveldb to rocksdb', osd)
+        self.kill_osd(osd)
+        remote.run(args=['sudo', 'sed', '-i', 's/leveldb/rocksdb/g', superblock])
+        if remote.os.package_type == 'deb':
+            # newer versions of leveldb name table files .ldb instead
+            # of .sst, so we need to rename them to what rocksdb
+            # expects Note that this uses perl's rename utility, only
+            # installed by default on debian-based systems
+            remote.run(args=['sudo', 'rename', 's/.ldb/.sst/',
+                             run.Raw(os.path.join(self.get_filepath().format(id=osd),
+                                                  'current', 'omap') + '/*.ldb')])
+        self.revive_osd(osd)
 
     def get_pool_num(self, pool):
         """
