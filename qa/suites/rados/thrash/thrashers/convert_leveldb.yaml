@@ -6,6 +6,7 @@ tasks:
     - objects unfound and apparently lost
     conf:
       osd:
+        enable experimental unrecoverable data corrupting features: '*'
         osd debug reject backfill probability: .3
         osd max backfills: 1
         osd scrub min interval: 60
@@ -16,4 +17,4 @@ tasks:
     timeout: 1200
     chance_pgnum_grow: 1
     chance_pgpnum_fix: 1
-    convert_leveldb_to_rocksdb: true
+    convert_leveldb_to_rocksdb: 5.0

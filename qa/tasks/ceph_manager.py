@@ -113,7 +113,7 @@ class Thrasher:
         self.clean_wait = self.config.get('clean_wait', 0)
         self.minin = self.config.get("min_in", 3)
         self.chance_move_pg = self.config.get('chance_move_pg', 1.0)
-        self.convert_leveldb_chance = 100.0
+        self.convert_leveldb_chance = config.get('convert_leveldb_to_rocksdb', 0.0)
         self.sighup_delay = self.config.get('sighup_delay')
 
         num_osds = self.in_osds + self.out_osds
@@ -509,8 +509,6 @@ class Thrasher:
         self.log('converting osd.%d from leveldb to rocksdb' % osd)
         self.kill_osd(osd)
         remote = self.ceph_manager.find_remote('osd', osd)
-        remote.run(args=['sudo', 'ceph-osd', '-c', self.cluster, '-i', str(osd),
-                         '--flush-journal'])
         remote.run(args=['sudo', 'sed', '-i', 's/leveldb/rocksdb/g',
                          os.path.join(self.ceph_manager.get_filepath().format(id=osd),
                                       'superblock')])
@@ -520,9 +518,9 @@ class Thrasher:
             # expects. Note that this uses perl's rename utility,
             # which is only installed by default on debian-based
             # systems
-            remote.run(args=['sudo', 'rename', 's/ldb/sst/',
-                             run.Raw(os.path.join(self.ceph_manager.get_filepath().format(id=osd),
-                                                  'current', 'omap') + '/*.ldb')])
+            remote.run(args=['sudo', 'bash', '-c', 'rename s/ldb/sst/ ' +
+                             os.path.join(self.ceph_manager.get_filepath().format(id=str(osd)),
+                                                  'current', 'omap') + '/*.ldb'])
         self.revive_osd(osd)
 
     def test_pool_min_size(self):
@@ -679,7 +677,7 @@ class Thrasher:
             actions.append((self.revive_osd, 1.0,))
         if self.config.get('thrash_primary_affinity', True):
             actions.append((self.primary_affinity, 1.0,))
-        if self.config.get('convert_leveldb_to_rocksdb', False):
+        if self.convert_leveldb_chance > 0:
             actions.append((self.convert_leveldb_osd, self.convert_leveldb_chance))
         actions.append((self.reweight_osd,
                         self.config.get('reweight_osd', .5),))
