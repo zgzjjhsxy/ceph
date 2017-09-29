@@ -9,6 +9,7 @@ overrides:
         ceph_stable_release: luminous
         osd_scenario: collocated
         journal_size: 1024
+        copy_admin_key: true
         osd_auto_discovery: false
         ceph_origin: repository
         ceph_repository: dev
