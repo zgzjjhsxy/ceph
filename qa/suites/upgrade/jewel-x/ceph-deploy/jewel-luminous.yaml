@@ -43,7 +43,7 @@ tasks:
     skip-mgr: True
 - ceph-deploy.upgrade:
     branch:
-      dev: luminous
+      dev: 'wip-20950'
     setup-mgr-node: True
     check-for-healthy: True
     roles:
