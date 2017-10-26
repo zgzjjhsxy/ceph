@@ -762,7 +762,7 @@ def upgrade(ctx, config):
                     'sudo', 'systemctl', 'restart', 'ceph.target'
                 ]
             )
-            ceph_admin.run(args=['sudo', 'ceph', '-s'])
+            # ceph_admin.run(args=['sudo', 'ceph', '-s'])
 
     if config.get('setup-mgr-node', None):
         mgr_nodes = get_nodes_using_role(ctx, 'mgr')
