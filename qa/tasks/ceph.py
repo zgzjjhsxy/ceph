@@ -632,6 +632,9 @@ def cluster(ctx, config):
                         mgr_dir + '/keyring',
                     ],
                 )
+                remote.run(args=[
+                    'sudo', 'chown', '-R', 'ceph:ceph', mgr_dir
+                ])
 
     log.info('Setting up mds nodes...')
     mdss = ctx.cluster.only(teuthology.is_type('mds', cluster_name))
