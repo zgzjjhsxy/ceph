@@ -43,7 +43,7 @@ tasks:
     skip-mgr: True
 - ceph-deploy.upgrade:
     branch:
-      dev: 'wip-20950'
+      dev: 'wip-qa-mgr-testing'
     setup-mgr-node: True
     check-for-healthy: True
     roles:
