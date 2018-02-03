@@ -1055,6 +1055,12 @@ namespace librados
     friend class ObjectWriteOperation;  // copy_from needs to see our IoCtxImpl
 
     IoCtxImpl *io_ctx_impl;
+//sxy
+  public:
+    IoCtxImpl *get_io_ctx_impl(){
+      return io_ctx_impl;
+    }
+//sxy
   };
 
   class CEPH_RADOS_API Rados

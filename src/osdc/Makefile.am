@@ -3,7 +3,8 @@ libosdc_la_SOURCES = \
 	osdc/ObjectCacher.cc \
 	osdc/Filer.cc \
 	osdc/Striper.cc \
-	osdc/Journaler.cc
+	osdc/Journaler.cc \
+	osdc/Migrate.cc
 noinst_LTLIBRARIES += libosdc.la
 
 noinst_HEADERS += \
@@ -12,5 +13,6 @@ noinst_HEADERS += \
 	osdc/ObjectCacher.h \
 	osdc/Objecter.h \
 	osdc/Striper.h \
-	osdc/WritebackHandler.h
+	osdc/WritebackHandler.h \
+	osdc/Migrate.h
 

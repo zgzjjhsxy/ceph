@@ -261,6 +261,14 @@ public:
    */
   int metadata_list(const std::string &start, uint64_t max, std::map<std::string, ceph::bufferlist> *pairs);
 
+//sxy
+  int migrate_incoming_init();
+  int migrate_outcoming_init(char *ip);
+  int migrate_outcoming_start();
+  int migrate_outcoming_start(uint64_t offset, uint64_t length);
+  int migrate_end();
+  void migrate_info_test();
+
 private:
   friend class RBD;
 

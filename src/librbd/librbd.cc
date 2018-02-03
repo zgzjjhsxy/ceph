@@ -31,6 +31,8 @@
 #include "librbd/internal.h"
 #include "librbd/LibrbdWriteback.h"
 
+#include "osdc/Migrate.h" //sxy
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -1031,6 +1033,104 @@ namespace librbd {
     tracepoint(librbd, metadata_list_exit, r);
     return r;
   }
+
+//sxy
+  int Image::migrate_incoming_init()
+  {
+    Migrate *pMigrate = new Migrate;
+    ImageCtx *ictx = (ImageCtx *)ctx;
+    image_info_t *info = new image_info_t;
+    this->stat(*info, 0);
+    int r = pMigrate->migrate_incoming_init(ictx, info->size, info->obj_size);
+    delete info;
+    delete pMigrate;
+    return r;
+  }
+
+  int Image::migrate_outcoming_init(char *ip)
+  {
+    Migrate *pMigrate = new Migrate;
+    ImageCtx *ictx = (ImageCtx *)ctx;
+    image_info_t *info = new image_info_t;
+    this->stat(*info, 0);
+    int r = pMigrate->migrate_outcoming_init(ictx, info->size, info->obj_size, ip);
+    delete info;
+    delete pMigrate;
+    return r;
+  }
+
+  int Image::migrate_outcoming_start(uint64_t offset, uint64_t length)
+  {
+    Migrate *pMigrate = new Migrate;
+    ImageCtx *ictx = (ImageCtx *)ctx;
+    int r = pMigrate->migrate_outcoming_start(ictx, offset, length);
+    delete pMigrate;
+    return r;
+  }
+
+  int Image::migrate_outcoming_start()
+  {
+    uint64_t image_size;
+    this->size(&image_size);
+    return migrate_outcoming_start(0, image_size);
+  }
+  
+  int Image::migrate_end()
+  {
+    Migrate *pMigrate = new Migrate;
+    int r = pMigrate->migrate_end();
+    delete pMigrate;
+    return r;
+  }
+  
+  void Image::migrate_info_test()
+  {
+    unsigned int size;
+    
+    std::cout << "pool_name:" << Migrate::pool_name << std::endl;
+    std::cout << "image_name:" << Migrate::image_name << std::endl;
+    
+    std::cout << "addr:\n";
+    size = Migrate::addr.size();
+    for(unsigned int i = 0; i < size; i++){
+      std::cout << Migrate::addr[i] << ' ';
+    }
+    putchar('\n');
+    getchar();
+    
+    std::cout << "dest_addr:\n";
+    size = Migrate::dest_addr.size();
+    for(unsigned int i = 0; i < size; i++){
+      std::cout << Migrate::dest_addr[i] << ' ';
+    }
+    putchar('\n');
+    getchar();
+    
+    std::cout << "osd_addr:\n";
+    size = Migrate::osd_addr.size();
+    for(unsigned int i = 0; i < size; i++){
+      std::cout << Migrate::osd_addr[i] << ' ';
+    }
+    putchar('\n');
+    getchar();
+    
+    std::cout << "osd_sock:\n";
+    for(map<string, int>::iterator it = Migrate::osd_sock.begin(); it != Migrate::osd_sock.end(); ++it){
+      std::cout << it->first << ' ' << it->second << std::endl;
+    }
+    getchar();
+    
+    
+    std::cout << "osd_task:\n";
+    for(map<string, std::list<object_info> >::iterator p = Migrate::osd_task.begin(); p != Migrate::osd_task.end(); ++p){
+      std::cout << p->first << ":\n";
+      for(std::list<object_info>::iterator q = p->second.begin(); q != p->second.end(); ++q){
+	std::cout << " objectno:" << q->objectno << " offset:" << q->offset << " length:" << q->length << std::endl;
+      }
+    }
+    getchar();
+  }
+//sxy
 
 } // namespace librbd
 
@@ -2081,3 +2181,14 @@ extern "C" void rbd_aio_release(rbd_completion_t c)
   librbd::RBD::AioCompletion *comp = (librbd::RBD::AioCompletion *)c;
   comp->release();
 }
+
+/*/sxy
+extern "C" int rbd_migrate_init_incoming(rbd_image_t image, int flag)
+{
+  librbd::ImageCtx *ictx = (librbd::ImageCtx *)image;
+  Migrate *pMigrate = new Migrate;
+  int r = pMigrate->migrate_init_incoming(ictx, flag);
+  return r;
+}
+
+//sxy*/
