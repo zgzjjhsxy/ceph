@@ -204,7 +204,7 @@ int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_s
   size_info = new struct migrate_init_info;
   memcpy(size_info, buffer, migrate_init_info_size);
 
-  int migrate_flag = 0;
+  int migrate_flag = SUCCESS;
   if(size_info->source_size > size){
     migrate_flag = SIZE_ERROR;
   }else if(size_info->source_obj_size != obj_size){
@@ -214,7 +214,7 @@ int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_s
   if(ret < 0){
   	return -1;
   }
-  if(migrate_flag == 0){
+  if(migrate_flag == SUCCESS){
     pool_name = ictx->data_ctx.get_pool_name();
     image_name = ictx->name;
     addr_locate(ictx, 0, size);
@@ -271,7 +271,7 @@ int Migrate::migrate_outcoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_
   	return -1;
   }
 
-  if(migrate_flag != '0'){
+  if(migrate_flag != SUCCESS){
     close(sock);
     return -1;
   }else{
