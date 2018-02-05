@@ -8,7 +8,7 @@ void *OSDMigrate::info_from_client(void *arg){
   int connfd = 0;
   while(1){
 				ofstream file;
-				file.open("/home/cloud/debug.log", ios::trunc);
+				file.open("/home/cloud/debug.log", ios::app);
 
   			struct sockaddr_in accept_client_addr;
   			socklen_t accept_client_addr_size = sizeof(accept_client_addr);
@@ -26,6 +26,7 @@ void *OSDMigrate::info_from_client(void *arg){
   			map<string, int> connection;
   			char *type = new char[sizeof(int)], *size, *buffer, *ack;
 				memset(type, 0, sizeof(int));
+				file << "wait recv\n";
 
         while((recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
@@ -172,6 +173,7 @@ void *OSDMigrate::OSDMigrate_incoming(void *arg){
   OSDMigrate *pOSDMigrate = (OSDMigrate *)arg;
   int connfd = 0;
   pthread_t tid;
+  ofstream file;
   while(1){
   			struct sockaddr_in accept_incoming_addr;
   			socklen_t accept_incoming_addr_size = sizeof(accept_incoming_addr);
@@ -179,9 +181,11 @@ void *OSDMigrate::OSDMigrate_incoming(void *arg){
         if(connfd < 0){
         	continue;
         }
+        file.open("/home/cloud/incoming_accept_connect.log", ios::app);
         pOSDMigrate->accept_incoming_sock.push_back(connfd);
         struct connect_info *info = new struct connect_info(connfd, pOSDMigrate);
         pthread_create(&tid, NULL, OSDMigrate_incoming_recv, (void *)info);
+        file << "sock:" << connfd << " tid:" << tid << "\n";
         pthread_detach(tid);
   }
   return NULL;
@@ -196,6 +200,7 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 	char *buffer = new char[object_info_size];
 	ofstream file;
 	file.open("/home/cloud/incoming_debug.log", ios::app);
+	file << "wait recv\n";
 	while((recv_len = read(sock, buffer, object_info_size)) > 0){
 		file << "recv_len:" << recv_len << " sock:" << sock << "\n";
 		struct object_info object;
