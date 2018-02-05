@@ -8,7 +8,7 @@ void *OSDMigrate::info_from_client(void *arg){
   int connfd = 0;
   while(1){
 				ofstream file;
-				file.open("/home/cloud/debug.log", ios::in||ios::trunc);
+				file.open("/home/cloud/debug.log", ios::trunc);
 
   			struct sockaddr_in accept_client_addr;
   			socklen_t accept_client_addr_size = sizeof(accept_client_addr);
@@ -30,7 +30,7 @@ void *OSDMigrate::info_from_client(void *arg){
         while((recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
         	memcpy(&osd_info_type, type, sizeof(int));
-        	file << "recv_len:" recv_len << " type:" << osd_info_type << '\n';
+        	file << "recv_len:" << recv_len << " type:" << osd_info_type << '\n';
         	
         	switch(osd_info_type){
         		case MIGRATE_INCOMING_INIT:
@@ -195,7 +195,7 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 	unsigned int object_info_size = sizeof(struct object_info);
 	char *buffer = new char[object_info_size];
 	ofstream file;
-	file.open("/home/cloud/incoming_debug.log", ios::in||ios::append);
+	file.open("/home/cloud/incoming_debug.log", ios::app);
 	while((recv_len = read(sock, buffer, object_info_size)) > 0){
 		file << "recv_len:" << recv_len << " sock:" << sock << "\n";
 		struct object_info object;
