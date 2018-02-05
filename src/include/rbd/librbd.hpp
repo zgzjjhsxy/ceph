@@ -267,7 +267,6 @@ public:
   int migrate_outcoming_start();
   int migrate_outcoming_start(uint64_t offset, uint64_t length);
   int migrate_end();
-  void migrate_info_test();
 
 private:
   friend class RBD;

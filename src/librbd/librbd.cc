@@ -1082,54 +1082,6 @@ namespace librbd {
     delete pMigrate;
     return r;
   }
-  
-  void Image::migrate_info_test()
-  {
-    unsigned int size;
-    
-    std::cout << "pool_name:" << Migrate::pool_name << std::endl;
-    std::cout << "image_name:" << Migrate::image_name << std::endl;
-    
-    std::cout << "addr:\n";
-    size = Migrate::addr.size();
-    for(unsigned int i = 0; i < size; i++){
-      std::cout << Migrate::addr[i] << ' ';
-    }
-    putchar('\n');
-    getchar();
-    
-    std::cout << "dest_addr:\n";
-    size = Migrate::dest_addr.size();
-    for(unsigned int i = 0; i < size; i++){
-      std::cout << Migrate::dest_addr[i] << ' ';
-    }
-    putchar('\n');
-    getchar();
-    
-    std::cout << "osd_addr:\n";
-    size = Migrate::osd_addr.size();
-    for(unsigned int i = 0; i < size; i++){
-      std::cout << Migrate::osd_addr[i] << ' ';
-    }
-    putchar('\n');
-    getchar();
-    
-    std::cout << "osd_sock:\n";
-    for(map<string, int>::iterator it = Migrate::osd_sock.begin(); it != Migrate::osd_sock.end(); ++it){
-      std::cout << it->first << ' ' << it->second << std::endl;
-    }
-    getchar();
-    
-    
-    std::cout << "osd_task:\n";
-    for(map<string, std::list<object_info> >::iterator p = Migrate::osd_task.begin(); p != Migrate::osd_task.end(); ++p){
-      std::cout << p->first << ":\n";
-      for(std::list<object_info>::iterator q = p->second.begin(); q != p->second.end(); ++q){
-	std::cout << " objectno:" << q->objectno << " offset:" << q->offset << " length:" << q->length << std::endl;
-      }
-    }
-    getchar();
-  }
 //sxy
 
 } // namespace librbd
