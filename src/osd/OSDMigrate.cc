@@ -66,12 +66,15 @@ void *OSDMigrate::info_from_client(void *arg){
         int recv_len = 0;
         bool recv = true;
   			unsigned int length = 0, object_info_size = sizeof(struct object_info);
-  			string pool_name, image_name;
   			vector<string> dest_addr;
   			list<object_info> task;
   			map<string, int> connection;
   			char *type = new char[sizeof(int)], *size, *buffer, *ack;
 				memset(type, 0, sizeof(int));
+				librados::Rados cluster;
+  			librados::IoCtx io_ctx;
+  			librbd::RBD rbd_inst;
+  			librbd::Image image;
 
         while(recv && (recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
@@ -82,18 +85,13 @@ void *OSDMigrate::info_from_client(void *arg){
         	
         	switch(osd_info_type){
         		case MIGRATE_INCOMING_INIT:
-        			pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
-        			image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
-        			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
-        			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			pOSDMigrate->cluster.connect();
-        			pOSDMigrate->cluster.ioctx_create(pool_name.c_str(), pOSDMigrate->io_ctx);
-        			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, image_name.c_str());
+        			pOSDMigrate->pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
+        			pOSDMigrate->image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
         			break;
         			
         		case MIGRATE_OUTCOMING_INIT:
-        			pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
-        			image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
+        			pOSDMigrate->pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
+        			pOSDMigrate->image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
         			size = new char[sizeof(unsigned int)];
 							memset(size, 0, sizeof(unsigned int));
 							read(connfd, size, sizeof(unsigned int));
@@ -103,11 +101,6 @@ void *OSDMigrate::info_from_client(void *arg){
 							for(unsigned int i = 0; i < length; i++){
 								dest_addr[i] = Migrate::recv_str(connfd, IP_MAX);
 							}
-        			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
-        			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			pOSDMigrate->cluster.connect();
-        			pOSDMigrate->cluster.ioctx_create(pool_name.c_str(), pOSDMigrate->io_ctx);
-        			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, image_name.c_str());
 							break;
 							
 						case MIGRATE_START:
@@ -133,6 +126,13 @@ void *OSDMigrate::info_from_client(void *arg){
 								file.close();
 							}
 							delete buffer;
+							
+
+  						cluster.init_with_context(pOSDMigrate->OSDcct);
+        			cluster.conf_read_file("/etc/ceph/ceph.conf");
+        			cluster.connect();
+        			cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), io_ctx);
+        			rbd_inst.open(io_ctx, image, pOSDMigrate->image_name.c_str());
 							
 							for(list<object_info>::iterator iter = task.begin(); iter != task.end(); ++iter){
 								int sock;
@@ -172,7 +172,7 @@ void *OSDMigrate::info_from_client(void *arg){
 								file.close();
 								
 								bufferlist bl;
-								pOSDMigrate->image.read(iter->offset, iter->length, bl);
+								image.read(iter->offset, iter->length, bl);
 								file.open("/home/cloud/debug.log", ios::app);
 								file << "read image\n";
 								file.close();
@@ -193,6 +193,7 @@ void *OSDMigrate::info_from_client(void *arg){
 								file << "receive ack\n";
 								file.close();
 							}
+							io_ctx.close();
 							task.clear();
 							break;
 							
@@ -206,7 +207,6 @@ void *OSDMigrate::info_from_client(void *arg){
     						close(pOSDMigrate->accept_incoming_sock[i]);
     					}
     					pOSDMigrate->accept_incoming_sock.clear();
-    					pOSDMigrate->io_ctx.close();
 							break;
         	}
         	
@@ -252,6 +252,17 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 	file.open("/home/cloud/incoming_debug.log", ios::app);
 	file << "wait recv\n";
 	file.close();
+	
+	librados::Rados cluster;
+  librados::IoCtx io_ctx;
+  librbd::RBD rbd_inst;
+ 	librbd::Image image;
+ 	cluster.init_with_context(incoming->OSDcct);
+  cluster.conf_read_file("/etc/ceph/ceph.conf");
+  cluster.connect();
+  cluster.ioctx_create(incoming->pool_name.c_str(), io_ctx);
+  rbd_inst.open(io_ctx, image, incoming->image_name.c_str());
+
 	while((recv_len = read(sock, buffer, object_info_size)) > 0){
 		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "recv_len:" << recv_len << " sock:" << sock << "\n";
@@ -269,7 +280,7 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 		bufferlist bl;
 		bl.clear();
 		bl.append(write_buf, object.length);
-		incoming->image.write(object.offset, object.length, bl);
+		image.write(object.offset, object.length, bl);
 		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "write image\n";
 		file.close();
@@ -283,7 +294,11 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 		memset(buffer, 0, object_info_size);
 		delete write_buf;
 	}
+	file.open("/home/cloud/incoming_debug.log", ios::app);
+	file << "end while\n";
+	file.close();
 	delete buffer;
+	io_ctx.close();
 	return NULL;
 }
 

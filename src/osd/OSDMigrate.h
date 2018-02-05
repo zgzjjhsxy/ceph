@@ -22,10 +22,7 @@ class OSDMigrate{
     int accept_client_sock = -1;
     vector<int> accept_incoming_sock;
     struct sockaddr_in client_addr, incoming_addr;
-    librados::Rados cluster;
-  	librados::IoCtx io_ctx;
-  	librbd::RBD rbd_inst;
-  	librbd::Image image;
+  	string pool_name, image_name;
 
     void OSDMigrate_init();
     static void *info_from_client(void *arg);
