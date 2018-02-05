@@ -19,6 +19,7 @@ void *OSDMigrate::info_from_client(void *arg){
         pOSDMigrate->accept_client_sock = connfd;
         
         int recv_len = 0;
+        bool recv = true;
   			unsigned int length = 0, object_info_size = sizeof(struct object_info);
   			string pool_name, image_name;
   			vector<string> dest_addr;
@@ -27,10 +28,12 @@ void *OSDMigrate::info_from_client(void *arg){
   			char *type = new char[sizeof(int)], *size, *buffer, *ack;
 				memset(type, 0, sizeof(int));
 				file << "wait recv\n";
+				file.close();
 
-        while((recv_len = read(connfd, type, sizeof(int))) > 0){
+        while(recv && (recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
         	memcpy(&osd_info_type, type, sizeof(int));
+        	file.open("/home/cloud/debug.log", ios::app);
         	file << "recv_len:" << recv_len << " type:" << osd_info_type << '\n';
         	
         	switch(osd_info_type){
@@ -145,6 +148,7 @@ void *OSDMigrate::info_from_client(void *arg){
 							break;
 							
 						case MIGRATE_END:
+							recv = false;
 							for(map<string, int>::iterator iter = connection.begin(); iter != connection.end(); ++iter){
 								close(iter->second);
 							}
@@ -159,10 +163,10 @@ void *OSDMigrate::info_from_client(void *arg){
         	int client_ack = SUCCESS;
 					write(connfd, &client_ack, sizeof(int));
 					file << "send ack to client\n";
+					file.close();
 					if(osd_info_type == MIGRATE_END){
 						close(connfd);
 						pOSDMigrate->accept_client_sock = -1;
-						file.close();
 					}
       	}
   }
