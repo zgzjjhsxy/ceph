@@ -54,7 +54,6 @@ void *OSDMigrate::info_from_client(void *arg){
   int connfd = 0;
   while(1){
 				ofstream file;
-				file.open("/home/cloud/debug.log", ios::app);
 
   			struct sockaddr_in accept_client_addr;
   			socklen_t accept_client_addr_size = sizeof(accept_client_addr);
@@ -73,8 +72,6 @@ void *OSDMigrate::info_from_client(void *arg){
   			map<string, int> connection;
   			char *type = new char[sizeof(int)], *size, *buffer, *ack;
 				memset(type, 0, sizeof(int));
-				file << pOSDMigrate->client_sock << "wait recv" << pOSDMigrate->accept_client_sock << "\n";
-				file.close();
 
         while(recv && (recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
@@ -86,29 +83,17 @@ void *OSDMigrate::info_from_client(void *arg){
         	switch(osd_info_type){
         		case MIGRATE_INCOMING_INIT:
         			pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
-        			file.open("/home/cloud/debug.log", ios::app);
-        			file << "pool_name:" << pool_name << '\n';
         			image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
-        			file << "image_name:" << image_name << '\n';
         			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
-        			file << "cluster init\n";
         			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			file << "conf read\n";
         			pOSDMigrate->cluster.connect();
-        			file << "cluster connect\n";
         			pOSDMigrate->cluster.ioctx_create(pool_name.c_str(), pOSDMigrate->io_ctx);
-        			file << "ioctx create\n";
         			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, image_name.c_str());
-        			file << "rbd open\n";
-        			file.close();
         			break;
         			
         		case MIGRATE_OUTCOMING_INIT:
         			pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
-        			file.open("/home/cloud/debug.log", ios::app);
-        			file << "pool_name:" << pool_name << '\n';
         			image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
-        			file << "image_name:" << image_name << '\n';
         			size = new char[sizeof(unsigned int)];
 							memset(size, 0, sizeof(unsigned int));
 							read(connfd, size, sizeof(unsigned int));
@@ -117,19 +102,12 @@ void *OSDMigrate::info_from_client(void *arg){
 							dest_addr.resize(length);
 							for(unsigned int i = 0; i < length; i++){
 								dest_addr[i] = Migrate::recv_str(connfd, IP_MAX);
-								file << "dest_addr" << i << ":" << dest_addr[i] << "\n";
 							}
         			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
-        			file << "cluster init\n";
         			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			file << "conf read\n";
         			pOSDMigrate->cluster.connect();
-        			file << "cluster connect\n";
         			pOSDMigrate->cluster.ioctx_create(pool_name.c_str(), pOSDMigrate->io_ctx);
-        			file << "ioctx create\n";
         			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, image_name.c_str());
-        			file << "rbd open\n";
-        			file.close();
 							break;
 							
 						case MIGRATE_START:
@@ -228,14 +206,12 @@ void *OSDMigrate::info_from_client(void *arg){
     						close(pOSDMigrate->accept_incoming_sock[i]);
     					}
     					pOSDMigrate->accept_incoming_sock.clear();
+    					pOSDMigrate->io_ctx.close();
 							break;
         	}
         	
         	int client_ack = SUCCESS;
 					write(connfd, &client_ack, sizeof(int));
-					file.open("/home/cloud/debug.log", ios::app);
-					file << "send ack to client\n";
-					file.close();
 					if(osd_info_type == MIGRATE_END){
 						close(connfd);
 						pOSDMigrate->accept_client_sock = -1;
@@ -249,7 +225,6 @@ void *OSDMigrate::OSDMigrate_incoming(void *arg){
   OSDMigrate *pOSDMigrate = (OSDMigrate *)arg;
   int connfd = 0;
   pthread_t tid;
-  ofstream file;
   while(1){
   			struct sockaddr_in accept_incoming_addr;
   			socklen_t accept_incoming_addr_size = sizeof(accept_incoming_addr);
@@ -257,12 +232,9 @@ void *OSDMigrate::OSDMigrate_incoming(void *arg){
         if(connfd < 0){
         	continue;
         }
-        file.open("/home/cloud/incoming_accept_connect.log", ios::app);
         pOSDMigrate->accept_incoming_sock.push_back(connfd);
         struct connect_info *info = new struct connect_info(connfd, pOSDMigrate);
         pthread_create(&tid, NULL, OSDMigrate_incoming_recv, (void *)info);
-        file << "sock:" << connfd << " tid:" << tid << "\n";
-        file.close();
         pthread_detach(tid);
   }
   return NULL;
