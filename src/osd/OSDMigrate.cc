@@ -106,6 +106,7 @@ void *OSDMigrate::info_from_client(void *arg){
 								task.push_back(temp);
 								file.open("/home/cloud/debug.log", ios::app);
 								file << "receive object objectno:" << temp.objectno << " offset:" << temp.offset << " length:" << temp.length << "\n";
+								file.close();
 							}
 							delete buffer;
 							
@@ -215,6 +216,7 @@ void *OSDMigrate::OSDMigrate_incoming(void *arg){
         struct connect_info *info = new struct connect_info(connfd, pOSDMigrate);
         pthread_create(&tid, NULL, OSDMigrate_incoming_recv, (void *)info);
         file << "sock:" << connfd << " tid:" << tid << "\n";
+        file.close();
         pthread_detach(tid);
   }
   return NULL;
@@ -230,25 +232,35 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 	ofstream file;
 	file.open("/home/cloud/incoming_debug.log", ios::app);
 	file << "wait recv\n";
+	file.close();
 	while((recv_len = read(sock, buffer, object_info_size)) > 0){
+		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "recv_len:" << recv_len << " sock:" << sock << "\n";
+		file.close();
 		struct object_info object;
 		memcpy(&object, buffer, object_info_size);
+		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "receive object objectno:" << object.objectno << " offset:" << object.offset << " length:" << object.length << "\n";
+		file.close();
 		char *write_buf = new char[object.length];
 		read(sock, write_buf, object.length);
+		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "receive image\n";
+		file.close();
 		bufferlist bl;
 		bl.clear();
 		bl.append(write_buf, object.length);
 		incoming->image.write(object.offset, object.length, bl);
+		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "write image\n";
+		file.close();
 		
 		int ack = SUCCESS;
 		write(sock, &ack, sizeof(int));
+		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "send ack\n";
+		file.close();
 	}
-	file.close();
 	return NULL;
 }
 
