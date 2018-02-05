@@ -47,14 +47,15 @@ void Migrate::connect_to_osd(int osd){
   	serv_addr.sin_addr.s_addr = inet_addr(osd_addr[osd].c_str());
   	connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
   	osd_sock.insert(map<string, int>::value_type(osd_addr[osd], sock));
+  	std::cout << "connect to osd" << osd_addr[osd] << " sock " << sock << std::endl;
 	}
 }
 
 void *Migrate::info_to_osd(void *arg){
 	struct osd_info *info = (struct osd_info *)arg;
 	string osd = info->osd;
-	int sock = osd_sock[osd];
 	Migrate *pMigrate = info->pMigrate;
+	int sock = pMigrate->osd_sock[osd];
 	unsigned int length = 0, object_info_size = sizeof(struct object_info);
 	char *size, *buffer;
 	
@@ -68,11 +69,13 @@ void *Migrate::info_to_osd(void *arg){
 		case MIGRATE_INCOMING_INIT:
 			send_str(sock, pool_name, MAX_POOL_NAME_SIZE);
 			send_str(sock, image_name, RBD_MAX_IMAGE_NAME_SIZE);
+			std::cout << "osd " << osd << "MIGRATE_INCOMING_INIT succeed" << std::endl;
 			break;
 			
 		case MIGRATE_OUTCOMING_INIT:
 			send_str(sock, pool_name, MAX_POOL_NAME_SIZE);
 			send_str(sock, image_name, RBD_MAX_IMAGE_NAME_SIZE);
+			std::cout << "osd " << osd << "MIGRATE_OUTCOMING_INIT succeed" << std::endl;
 			length = dest_addr.size();
 			size = new char[sizeof(unsigned int)];
 			memset(size, 0, sizeof(unsigned int));
@@ -81,11 +84,13 @@ void *Migrate::info_to_osd(void *arg){
 			delete size;
 			for(unsigned int i = 0; i < length; i++){
 				send_str(sock, dest_addr[i], IP_MAX);
+				std::cout << "dest_addr " << dest_addr[i] << " to " << osd << std::endl;
 			}
 			break;
 			
 		case MIGRATE_START:
 			length = osd_task[osd].size();
+			std::cout << "osd " << osd << " task number:" << length << std::endl;
 			size = new char[sizeof(unsigned int)];
 			memset(size, 0, sizeof(unsigned int));
 			memcpy(size, &length, sizeof(unsigned int));
@@ -95,6 +100,7 @@ void *Migrate::info_to_osd(void *arg){
 			buffer = new char[object_info_size];
 			list<object_info>::iterator iter = osd_task[osd].begin();
 			for(unsigned int i = 0; i < length; i++){
+				std::cout << "objectno " << iter->objectno << " offset " << iter->offset << " length " << iter->length << std::endl;
 				memset(buffer, 0, object_info_size);
 				memcpy(buffer, &(*iter), object_info_size);
 				write(sock, buffer, object_info_size);
@@ -104,10 +110,14 @@ void *Migrate::info_to_osd(void *arg){
 			break;
 	}
 	
+	std::cout << "wait" << osd << "ack"<< std::endl;
+	
 	char *ack = new char[sizeof(int)];
 	memset(ack, 0, sizeof(int));
 	read(sock, ack, sizeof(int));
 	delete ack;
+	
+	std::cout << "end" << std::endl;
 	
 	if(pMigrate->osd_info_type == MIGRATE_END){
 		close(sock);
@@ -335,8 +345,11 @@ int Migrate::migrate_outcoming_start(ImageCtx *ictx, uint64_t offset, uint64_t l
       if(iter == osd_task.end()){
       	osd_task.insert(map<string, list<object_info> >::value_type(ip, list<object_info>()));
       }
-      struct object_info temp(q->objectno, q->offset, q->length);
-      osd_task[ip].push_back(temp);
+      for(vector<pair<uint64_t,uint64_t> >::iterator r = q->buffer_extents.begin(); r != q->buffer_extents.end(); ++r){
+      	struct object_info temp(q->objectno, r->first, r->second);
+      	osd_task[ip].push_back(temp);
+      }
+      
     }
   }
   

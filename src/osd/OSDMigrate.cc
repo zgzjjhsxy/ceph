@@ -7,6 +7,9 @@ void *OSDMigrate::info_from_client(void *arg){
   OSDMigrate *pOSDMigrate = (OSDMigrate *)arg;
   int connfd = 0;
   while(1){
+				ofstream file;
+				file.open("/home/cloud/debug.log", ios::in||ios::trunc);
+
   			struct sockaddr_in accept_client_addr;
   			socklen_t accept_client_addr_size = sizeof(accept_client_addr);
         connfd = accept(pOSDMigrate->client_sock, (struct sockaddr*)&(accept_client_addr), &accept_client_addr_size);
@@ -27,20 +30,31 @@ void *OSDMigrate::info_from_client(void *arg){
         while((recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
         	memcpy(&osd_info_type, type, sizeof(int));
+        	file << "recv_len:" recv_len << " type:" << osd_info_type << '\n';
+        	
         	switch(osd_info_type){
         		case MIGRATE_INCOMING_INIT:
         			pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
+        			file << "pool_name:" << pool_name << '\n';
         			image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
+        			file << "image_name:" << image_name << '\n';
         			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
+        			file << "cluster init\n";
         			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
+        			file << "conf read\n";
         			pOSDMigrate->cluster.connect();
+        			file << "cluster connect\n";
         			pOSDMigrate->cluster.ioctx_create(pool_name.c_str(), pOSDMigrate->io_ctx);
+        			file << "ioctx create\n";
         			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, image_name.c_str());
+        			file << "rbd open\n";
         			break;
         			
         		case MIGRATE_OUTCOMING_INIT:
         			pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
+        			file << "pool_name:" << pool_name << '\n';
         			image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
+        			file << "image_name:" << image_name << '\n';
         			size = new char[sizeof(unsigned int)];
 							memset(size, 0, sizeof(unsigned int));
 							read(connfd, size, sizeof(unsigned int));
@@ -49,12 +63,18 @@ void *OSDMigrate::info_from_client(void *arg){
 							dest_addr.resize(length);
 							for(unsigned int i = 0; i < length; i++){
 								dest_addr[i] = Migrate::recv_str(connfd, IP_MAX);
+								file << "dest_addr" << i << ":" << dest_addr[i] << "\n";
 							}
         			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
+        			file << "cluster init\n";
         			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
+        			file << "conf read\n";
         			pOSDMigrate->cluster.connect();
+        			file << "cluster connect\n";
         			pOSDMigrate->cluster.ioctx_create(pool_name.c_str(), pOSDMigrate->io_ctx);
+        			file << "ioctx create\n";
         			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, image_name.c_str());
+        			file << "rbd open\n";
 							break;
 							
 						case MIGRATE_START:
@@ -72,6 +92,7 @@ void *OSDMigrate::info_from_client(void *arg){
 								read(connfd, buffer, object_info_size);
 								memcpy(&temp, buffer, object_info_size);
 								task.push_back(temp);
+								file << "receive object objectno:" << temp.objectno << " offset:" << temp.offset << " length:" << temp.length << "\n";
 							}
 							delete buffer;
 							
@@ -91,27 +112,33 @@ void *OSDMigrate::info_from_client(void *arg){
   									continue;
   								}
   								connection.insert(map<string, int>::value_type(dest, sock));
+  								file << "connect to " << dest << " sock:" << sock << "\n";
 								}
 								sock = connection[dest];
+								file << "ready to send to " << dest << " sock:" << sock << "\n";
 								
 								buffer = new char[object_info_size];
 								memset(buffer, 0, object_info_size);
 								memcpy(buffer, &(*iter), object_info_size);
 								write(sock, buffer, object_info_size);
 								delete buffer;
+								file << "send objectno:" << iter->objectno << " offset:" << iter->offset << " length:" << iter->length << "\n";
 								
 								bufferlist bl;
 								pOSDMigrate->image.read(iter->offset, iter->length, bl);
+								file << "read image\n";
 								buffer = new char[iter->length];
 								memset(buffer, 0, iter->length);
 								bl.copy(0, iter->length, buffer);
 								write(sock, buffer, iter->length);
 								delete buffer;
+								file << "send image\nwait ack\n";
 								
 								ack = new char[sizeof(int)];
 								memset(ack, 0, sizeof(int));
 								read(sock, ack, sizeof(int));
 								delete ack;
+								file << "receive ack\n";
 							}
 							task.clear();
 							break;
@@ -130,9 +157,11 @@ void *OSDMigrate::info_from_client(void *arg){
         	
         	int client_ack = SUCCESS;
 					write(connfd, &client_ack, sizeof(int));
+					file << "send ack to client\n";
 					if(osd_info_type == MIGRATE_END){
 						close(connfd);
 						pOSDMigrate->accept_client_sock = -1;
+						file.close();
 					}
       	}
   }
@@ -165,19 +194,27 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 	int recv_len = 0;
 	unsigned int object_info_size = sizeof(struct object_info);
 	char *buffer = new char[object_info_size];
+	ofstream file;
+	file.open("/home/cloud/incoming_debug.log", ios::in||ios::append);
 	while((recv_len = read(sock, buffer, object_info_size)) > 0){
+		file << "recv_len:" << recv_len << " sock:" << sock << "\n";
 		struct object_info object;
 		memcpy(&object, buffer, object_info_size);
+		file << "receive object objectno:" << object.objectno << " offset:" << object.offset << " length:" << object.length << "\n";
 		char *write_buf = new char[object.length];
 		read(sock, write_buf, object.length);
+		file << "receive image\n";
 		bufferlist bl;
 		bl.clear();
 		bl.append(write_buf, object.length);
 		incoming->image.write(object.offset, object.length, bl);
+		file << "write image\n";
 		
 		int ack = SUCCESS;
 		write(sock, &ack, sizeof(int));
+		file << "send ack\n";
 	}
+	file.close();
 	return NULL;
 }
 
