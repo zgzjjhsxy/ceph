@@ -31,6 +31,8 @@ class OSDMigrate{
     static void *info_from_client(void *arg);
     static void *OSDMigrate_incoming(void *arg);
     static void *OSDMigrate_incoming_recv(void *arg);
+    static int64_t read_pack(int sockfd, void *buf, uint64_t len);
+    static int64_t write_pack(int sockfd, const void *buf, uint64_t len);
 
     OSDMigrate(CephContext *cct){
       OSDcct = cct;

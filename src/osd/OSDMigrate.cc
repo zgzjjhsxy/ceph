@@ -3,6 +3,52 @@
 
 using ceph::bufferlist;
 
+int64_t OSDMigrate::read_pack(int sockfd, void *buf, uint64_t len){
+  if(buf == NULL || len <= 0){
+  	return 0;
+  }
+ 
+	int64_t nleft = len, nread;
+	char *ptr = (char *)buf;
+ 
+  while(nleft > 0){
+  	if((nread = read(sockfd, ptr, nleft)) < 0){
+  		if(errno == EINTR){
+  			nread = 0;
+  		}else{
+  			return -1;
+  		}
+  	}else if(nread == 0){
+  		break;
+  	}
+  	nleft -= nread;
+  	ptr += nread;
+	}
+	return (len - nleft);
+}
+ 
+int64_t OSDMigrate::write_pack(int sockfd, const void * buf, uint64_t len){
+  if(buf == NULL || len <= 0){
+  	return 0;
+  }
+  
+  int64_t nleft = len, nwritten;
+  const char *ptr = (const char *)buf;
+  
+  while(nleft > 0){
+  	if((nwritten = write(sockfd, ptr, nleft)) <= 0){
+  		if(nwritten <= 0 && errno == EINTR){
+  			nwritten = 0;
+  		}else{
+  			return -1;
+  		}
+  	}
+  	nleft -= nwritten;
+  	ptr += nwritten;
+  }
+  return (len - nleft);
+}
+
 void *OSDMigrate::info_from_client(void *arg){
   OSDMigrate *pOSDMigrate = (OSDMigrate *)arg;
   int connfd = 0;
@@ -115,15 +161,15 @@ void *OSDMigrate::info_from_client(void *arg){
 								string dest = dest_addr[iter->objectno];
 								map<string, int>::iterator is_connect = connection.find(dest);
 								if(is_connect == connection.end()){
-									file.open("/home/cloud/debug.log", ios::app);
-  								file << "connect to " << dest << " sock:" << sock << "\n";
-  								file.close();
 									sock = socket(AF_INET, SOCK_STREAM, 0);
 									struct sockaddr_in serv_addr;
   								memset(&serv_addr, 0, sizeof(serv_addr));
   								serv_addr.sin_family = AF_INET;
   								serv_addr.sin_port=htons(OSD_INCOMING_PORT);
   								serv_addr.sin_addr.s_addr = inet_addr(dest.c_str());
+  								file.open("/home/cloud/debug.log", ios::app);
+  								file << "connect to " << dest << " sock:" << sock << "\n";
+  								file.close();
   								int ret = connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
   								if(ret < 0){
   									continue;
@@ -155,7 +201,7 @@ void *OSDMigrate::info_from_client(void *arg){
 								buffer = new char[iter->length];
 								memset(buffer, 0, iter->length);
 								bl.copy(0, iter->length, buffer);
-								write(sock, buffer, iter->length);
+								OSDMigrate::write_pack(sock, buffer, iter->length);
 								delete buffer;
 								file.open("/home/cloud/debug.log", ios::app);
 								file << "send image\nwait ack\n";
@@ -229,6 +275,7 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 	int recv_len = 0;
 	unsigned int object_info_size = sizeof(struct object_info);
 	char *buffer = new char[object_info_size];
+	memset(buffer, 0, object_info_size);
 	ofstream file;
 	file.open("/home/cloud/incoming_debug.log", ios::app);
 	file << "wait recv\n";
@@ -243,7 +290,7 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 		file << "receive object objectno:" << object.objectno << " offset:" << object.offset << " length:" << object.length << "\n";
 		file.close();
 		char *write_buf = new char[object.length];
-		read(sock, write_buf, object.length);
+		OSDMigrate::read_pack(sock, write_buf, object.length);
 		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "receive image\n";
 		file.close();
@@ -260,7 +307,11 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 		file.open("/home/cloud/incoming_debug.log", ios::app);
 		file << "send ack\n";
 		file.close();
+		
+		memset(buffer, 0, object_info_size);
+		delete write_buf;
 	}
+	delete buffer;
 	return NULL;
 }
 
