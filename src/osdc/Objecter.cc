@@ -2501,7 +2501,8 @@ int64_t Objecter::get_object_pg_hash_position(int64_t pool, const string& key,
 
 int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,  bool any_change)
 {
-  assert(rwlock.is_locked());
+  if(t->flags != CEPH_OSD_FLAG_LOCATE)
+    assert(rwlock.is_locked());
 
   bool is_read = t->flags & CEPH_OSD_FLAG_READ;
   bool is_write = t->flags & CEPH_OSD_FLAG_WRITE;
@@ -2540,7 +2541,8 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,  bool any
 
   pg_t pgid;
   if (t->precalc_pgid) {
-    assert(t->base_oid.name.empty()); // make sure this is a listing op
+    if(t->flags != CEPH_OSD_FLAG_LOCATE)
+      assert(t->base_oid.name.empty()); // make sure this is a listing op
     ldout(cct, 10) << __func__ << " have " << t->base_pgid << " pool "
 		   << osdmap->have_pg_pool(t->base_pgid.pool()) << dendl;
     if (!osdmap->have_pg_pool(t->base_pgid.pool())) {
@@ -2646,7 +2648,8 @@ int Objecter::_calc_target(op_target_t *t, epoch_t *last_force_resend,  bool any
 	      t->used_replica = true;
 	  }
 	}
-	assert(best >= 0);
+        if(t->flags != CEPH_OSD_FLAG_LOCATE)
+	  assert(best >= 0);
 	osd = acting[best];
       } else {
 	osd = acting_primary;

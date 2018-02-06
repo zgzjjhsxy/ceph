@@ -49,6 +49,8 @@ using namespace std;
 
 #include "erasure-code/ErasureCodePlugin.h"
 
+#include "osd/OSDMigrate.h"
+
 #define dout_subsys ceph_subsys_osd
 
 namespace {
@@ -592,6 +594,9 @@ int main(int argc, const char **argv)
 
   osd->final_init();
 
+  OSDMigrate *pOSDMigrate = new OSDMigrate(g_ceph_context);
+  pOSDMigrate->OSDMigrate_init();
+
   if (g_conf->inject_early_sigterm)
     kill(getpid(), SIGTERM);
 
@@ -615,6 +620,8 @@ int main(int argc, const char **argv)
   delete ms_hb_back_server;
   delete ms_cluster;
   delete ms_objecter;
+
+  delete pOSDMigrate;
 
   client_byte_throttler.reset();
   client_msg_throttler.reset();

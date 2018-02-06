@@ -48,6 +48,8 @@ class MWatchNotify;
 
 class PerfCounters;
 
+#define CEPH_OSD_FLAG_LOCATE 0x800000
+
 // -----------------------------------------
 
 struct ObjectOperation {
@@ -2645,6 +2647,16 @@ private:
   epoch_t epoch_barrier;
 public:
   void set_epoch_barrier(epoch_t epoch);
+
+public:
+  OSDMap *get_osdmap(){
+    return osdmap;
+  }
+
+  int calc_target(op_target_t *t)
+  {
+    return _calc_target(t);
+  }
 };
 
 #endif

@@ -31,6 +31,8 @@
 #include "librbd/internal.h"
 #include "librbd/LibrbdWriteback.h"
 
+#include "osdc/Migrate.h"
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -1029,6 +1031,54 @@ namespace librbd {
       }
     }
     tracepoint(librbd, metadata_list_exit, r);
+    return r;
+  }
+
+  int Image::migrate_incoming_init()
+  {
+    Migrate *pMigrate = new Migrate;
+    ImageCtx *ictx = (ImageCtx *)ctx;
+    image_info_t *info = new image_info_t;
+    this->stat(*info, 0);
+    int r = pMigrate->migrate_incoming_init(ictx, info->size, info->obj_size);
+    delete info;
+    delete pMigrate;
+    return r;
+  }
+
+  int Image::migrate_outcoming_init(char *ip)
+  {
+    Migrate *pMigrate = new Migrate;
+    ImageCtx *ictx = (ImageCtx *)ctx;
+    image_info_t *info = new image_info_t;
+    this->stat(*info, 0);
+    int r = pMigrate->migrate_outcoming_init(ictx, info->size, info->obj_size, ip);
+    delete info;
+    delete pMigrate;
+    return r;
+  }
+
+  int Image::migrate_outcoming_start(uint64_t offset, uint64_t length)
+  {
+    Migrate *pMigrate = new Migrate;
+    ImageCtx *ictx = (ImageCtx *)ctx;
+    int r = pMigrate->migrate_outcoming_start(ictx, offset, length);
+    delete pMigrate;
+    return r;
+  }
+
+  int Image::migrate_outcoming_start()
+  {
+    uint64_t image_size;
+    this->size(&image_size);
+    return migrate_outcoming_start(0, image_size);
+  }
+
+  int Image::migrate_end()
+  {
+    Migrate *pMigrate = new Migrate;
+    int r = pMigrate->migrate_end();
+    delete pMigrate;
     return r;
   }
 
