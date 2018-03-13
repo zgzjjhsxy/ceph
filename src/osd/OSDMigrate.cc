@@ -21,16 +21,12 @@ void *OSDMigrate::info_from_client(void *arg){
         int recv_len = 0;
         bool recv = true;
   			unsigned int length = 0, object_info_size = sizeof(struct object_info);
-  			char *type = new char[sizeof(int)], *size, *buffer, *ack;
+  			char *type = new char[sizeof(int)], *size, *ack;
 				memset(type, 0, sizeof(int));
 
         while(recv && (recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
         	memcpy(&osd_info_type, type, sizeof(int));
-        	librados::Rados cluster;
-  				librados::IoCtx io_ctx;
-  				librbd::RBD rbd_inst;
-  				librbd::Image image;
         	
         	switch(osd_info_type){
         		case MIGRATE_INCOMING_INIT:
@@ -68,24 +64,24 @@ void *OSDMigrate::info_from_client(void *arg){
           		file.close();
 							
 							pOSDMigrate->task.clear();
-							buffer = new char[object_info_size];
+							pOSDMigrate->buffer = new char[object_info_size];
 							for(unsigned int i = 0; i < length; i++){
 								object_info temp;
-								memset(buffer, 0, object_info_size);
-								Migrate::read_pack(connfd, buffer, object_info_size);
-								memcpy(&temp, buffer, object_info_size);
+								memset(pOSDMigrate->buffer, 0, object_info_size);
+								Migrate::read_pack(connfd, pOSDMigrate->buffer, object_info_size);
+								memcpy(&temp, pOSDMigrate->buffer, object_info_size);
 								pOSDMigrate->task.push_back(temp);
 								file.open("/home/cloud/debug.log", ios::app);
           			file << "objectno:" << pOSDMigrate->task.back().objectno << " offset:" << pOSDMigrate->task.back().offset << " length:" << pOSDMigrate->task.back().length << " dest_addr:" << pOSDMigrate->task.back().dest_ip << '\n';
           			file.close();
 							}
-							delete buffer;
+							delete pOSDMigrate->buffer;
 
-  						cluster.init_with_context(pOSDMigrate->OSDcct);
-        			cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			cluster.connect();
-        			cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), io_ctx);
-        			rbd_inst.open(io_ctx, image, pOSDMigrate->image_name.c_str());
+  						pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
+        			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
+        			pOSDMigrate->cluster.connect();
+        			pOSDMigrate->cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), pOSDMigrate->io_ctx);
+        			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, pOSDMigrate->image_name.c_str());
 							
 							for(list<object_info>::iterator iter = pOSDMigrate->task.begin(); iter != pOSDMigrate->task.end(); ++iter){
 								int sock;
@@ -116,17 +112,17 @@ void *OSDMigrate::info_from_client(void *arg){
           			file << "sock:" << sock << '\n';
           			file.close();
 								
-								buffer = new char[object_info_size];
-								memset(buffer, 0, object_info_size);
-								memcpy(buffer, &(*iter), object_info_size);
-								Migrate::write_pack(sock, buffer, object_info_size);
-								delete buffer;
+								pOSDMigrate->buffer = new char[object_info_size];
+								memset(pOSDMigrate->buffer, 0, object_info_size);
+								memcpy(pOSDMigrate->buffer, &(*iter), object_info_size);
+								Migrate::write_pack(sock, pOSDMigrate->buffer, object_info_size);
+								delete pOSDMigrate->buffer;
 								file.open("/home/cloud/debug.log", ios::app);
           			file << "objectno:" << iter->objectno << " offset:" << iter->offset << " length:" << iter->length << '\n';
           			file.close();
 								
 								pOSDMigrate->bl.clear();
-								image.read(iter->offset, iter->length, pOSDMigrate->bl);
+								pOSDMigrate->image.read(iter->offset, iter->length, pOSDMigrate->bl);
 								file.open("/home/cloud/debug.log", ios::app);
           			file << "read image\n";
           			file.close();
@@ -138,7 +134,7 @@ void *OSDMigrate::info_from_client(void *arg){
 								Migrate::read_pack(sock, ack, sizeof(int));
 								delete ack;
 							}
-							io_ctx.close();
+							pOSDMigrate->io_ctx.close();
 							pOSDMigrate->task.clear();
 							break;
 							
