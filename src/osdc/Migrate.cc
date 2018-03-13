@@ -428,12 +428,15 @@ int Migrate::migrate_end(){
     pthread_join(iter->second, NULL);
   }
   osd_tid.clear();
+  for(map<string, int>::iterator iter = osd_sock.begin(); iter != osd_sock.end(); ++iter){
+  	close(iter->second);
+  }
+  osd_sock.clear();
   
   osd_task_clear();
   addr.clear();
   dest_addr.clear();
   osd_addr.clear();
-  osd_sock.clear();
   osd_info_type = 0;
   pool_name.clear();
   image_name.clear();
