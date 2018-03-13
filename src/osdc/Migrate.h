@@ -60,8 +60,9 @@ struct object_info{
   uint64_t objectno;
   uint64_t offset;
   uint64_t length;
-  object_info() : objectno(0), offset(0), length(0) {}
-  object_info(uint64_t ono, uint64_t off, uint64_t len) : objectno(ono), offset(off), length(len) {}
+  char dest_ip[IP_MAX];
+  object_info() : objectno(0), offset(0), length(0) {memset(dest_ip, 0, IP_MAX);}
+  object_info(uint64_t ono, uint64_t off, uint64_t len, string dest) : objectno(ono), offset(off), length(len) {memset(dest_ip, 0, IP_MAX);strcpy(dest_ip, dest.c_str());}
 };
 
 class Migrate{
@@ -88,6 +89,8 @@ class Migrate{
     int migrate_outcoming_start(ImageCtx *ictx, uint64_t offset, uint64_t length);
     int migrate_end();
     void osd_task_clear();
+    static int64_t read_pack(int sockfd, void *buf, uint64_t len);
+    static int64_t write_pack(int sockfd, const void *buf, uint64_t len);
 };
 
 #endif

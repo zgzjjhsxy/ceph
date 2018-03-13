@@ -14,6 +14,13 @@ struct connect_info{
 	connect_info(int c, OSDMigrate *p) : connfd(c), pOSDMigrate(p) {}
 };
 
+struct migrate_info{
+  uint64_t offset;
+  uint64_t length;
+  migrate_info() : offset(0), length(0) {}
+  migrate_info(uint64_t off, uint64_t len) : offset(off), length(len) {}
+};
+
 class OSDMigrate{
   public:
   	CephContext *OSDcct;
@@ -23,13 +30,21 @@ class OSDMigrate{
     vector<int> accept_incoming_sock;
     struct sockaddr_in client_addr, incoming_addr;
   	string pool_name, image_name;
+  	
+  	vector<string> dest_addr;
+  	list<object_info> task;
+  	map<string, int> connection;
+  	char *buffer;
+		librados::Rados cluster;
+  	librados::IoCtx io_ctx;
+  	librbd::RBD rbd_inst;
+  	librbd::Image image;
+  	bufferlist bl;
 
     void OSDMigrate_init();
     static void *info_from_client(void *arg);
     static void *OSDMigrate_incoming(void *arg);
     static void *OSDMigrate_incoming_recv(void *arg);
-    static int64_t read_pack(int sockfd, void *buf, uint64_t len);
-    static int64_t write_pack(int sockfd, const void *buf, uint64_t len);
 
     OSDMigrate(CephContext *cct){
       OSDcct = cct;

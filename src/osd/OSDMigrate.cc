@@ -3,56 +3,13 @@
 
 using ceph::bufferlist;
 
-int64_t OSDMigrate::read_pack(int sockfd, void *buf, uint64_t len){
-  if(buf == NULL || len <= 0){
-  	return 0;
-  }
- 
-	int64_t nleft = len, nread;
-	char *ptr = (char *)buf;
- 
-  while(nleft > 0){
-  	if((nread = read(sockfd, ptr, nleft)) < 0){
-  		if(errno == EINTR){
-  			nread = 0;
-  		}else{
-  			return -1;
-  		}
-  	}else if(nread == 0){
-  		break;
-  	}
-  	nleft -= nread;
-  	ptr += nread;
-	}
-	return (len - nleft);
-}
- 
-int64_t OSDMigrate::write_pack(int sockfd, const void * buf, uint64_t len){
-  if(buf == NULL || len <= 0){
-  	return 0;
-  }
-  
-  int64_t nleft = len, nwritten;
-  const char *ptr = (const char *)buf;
-  
-  while(nleft > 0){
-  	if((nwritten = write(sockfd, ptr, nleft)) <= 0){
-  		if(nwritten <= 0 && errno == EINTR){
-  			nwritten = 0;
-  		}else{
-  			return -1;
-  		}
-  	}
-  	nleft -= nwritten;
-  	ptr += nwritten;
-  }
-  return (len - nleft);
-}
+
 
 void *OSDMigrate::info_from_client(void *arg){
   OSDMigrate *pOSDMigrate = (OSDMigrate *)arg;
   int connfd = 0;
   while(1){
+  			ofstream file;
   			struct sockaddr_in accept_client_addr;
   			socklen_t accept_client_addr_size = sizeof(accept_client_addr);
         connfd = accept(pOSDMigrate->client_sock, (struct sockaddr*)&(accept_client_addr), &accept_client_addr_size);
@@ -64,15 +21,8 @@ void *OSDMigrate::info_from_client(void *arg){
         int recv_len = 0;
         bool recv = true;
   			unsigned int length = 0, object_info_size = sizeof(struct object_info);
-  			vector<string> dest_addr;
-  			list<object_info> task;
-  			map<string, int> connection;
-  			char *type = new char[sizeof(int)], *size, *buffer, *ack;
+  			char *type = new char[sizeof(int)], *size, *ack;
 				memset(type, 0, sizeof(int));
-				librados::Rados cluster;
-  			librados::IoCtx io_ctx;
-  			librbd::RBD rbd_inst;
-  			librbd::Image image;
 
         while(recv && (recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
@@ -87,46 +37,64 @@ void *OSDMigrate::info_from_client(void *arg){
         		case MIGRATE_OUTCOMING_INIT:
         			pOSDMigrate->pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
         			pOSDMigrate->image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
+        			/*
         			size = new char[sizeof(unsigned int)];
 							memset(size, 0, sizeof(unsigned int));
 							read(connfd, size, sizeof(unsigned int));
 							memcpy(&length, size, sizeof(unsigned int));
 							delete size;
-							dest_addr.resize(length);
+							pOSDMigrate->dest_addr.resize(length);
 							for(unsigned int i = 0; i < length; i++){
-								dest_addr[i] = Migrate::recv_str(connfd, IP_MAX);
+								pOSDMigrate->dest_addr[i] = Migrate::recv_str(connfd, IP_MAX);
+								file.open("/home/cloud/debug.log", ios::app);
+          			file << "block" << i << " dest_addr:" << pOSDMigrate->dest_addr[i] << '\n';
+          			file.close();
 							}
+							*/
 							break;
 							
 						case MIGRATE_START:
 							size = new char[sizeof(unsigned int)];
 							memset(size, 0, sizeof(unsigned int));
-							read(connfd, size, sizeof(unsigned int));
+							Migrate::read_pack(connfd, size, sizeof(unsigned int));
 							memcpy(&length, size, sizeof(unsigned int));
 							delete size;
+							file.open("/home/cloud/debug.log", ios::app);
+          		file << "block_num:" << length << '\n';
+          		file.close();
 							
-							task.clear();
-							buffer = new char[object_info_size];
+							pOSDMigrate->task.clear();
+							pOSDMigrate->buffer = new char[object_info_size];
 							for(unsigned int i = 0; i < length; i++){
 								object_info temp;
-								memset(buffer, 0, object_info_size);
-								read(connfd, buffer, object_info_size);
-								memcpy(&temp, buffer, object_info_size);
-								task.push_back(temp);
+								memset(pOSDMigrate->buffer, 0, object_info_size);
+								Migrate::read_pack(connfd, pOSDMigrate->buffer, object_info_size);
+								memcpy(&temp, pOSDMigrate->buffer, object_info_size);
+								pOSDMigrate->task.push_back(temp);
+								file.open("/home/cloud/debug.log", ios::app);
+          			file << "objectno:" << pOSDMigrate->task.back().objectno << " offset:" << pOSDMigrate->task.back().offset << " length:" << pOSDMigrate->task.back().length << " dest_addr:" << pOSDMigrate->task.back().dest_ip << '\n';
+          			file.close();
 							}
-							delete buffer;
+							delete pOSDMigrate->buffer;
 
-  						cluster.init_with_context(pOSDMigrate->OSDcct);
-        			cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			cluster.connect();
-        			cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), io_ctx);
-        			rbd_inst.open(io_ctx, image, pOSDMigrate->image_name.c_str());
+  						pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
+        			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
+        			pOSDMigrate->cluster.connect();
+        			pOSDMigrate->cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), pOSDMigrate->io_ctx);
+        			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, pOSDMigrate->image_name.c_str());
 							
-							for(list<object_info>::iterator iter = task.begin(); iter != task.end(); ++iter){
+							for(list<object_info>::iterator iter = pOSDMigrate->task.begin(); iter != pOSDMigrate->task.end(); ++iter){
 								int sock;
-								string dest = dest_addr[iter->objectno];
-								map<string, int>::iterator is_connect = connection.find(dest);
-								if(is_connect == connection.end()){
+								file.open("/home/cloud/debug.log", ios::app);
+          			file << "block" << iter->objectno;
+          			file.close();
+								//string dest = pOSDMigrate->dest_addr[iter->objectno];
+								string dest = iter->dest_ip;
+								file.open("/home/cloud/debug.log", ios::app);
+          			file << " dest:" << dest << '\n';
+          			file.close();
+								map<string, int>::iterator is_connect = pOSDMigrate->connection.find(dest);
+								if(is_connect == pOSDMigrate->connection.end()){
 									sock = socket(AF_INET, SOCK_STREAM, 0);
 									struct sockaddr_in serv_addr;
   								memset(&serv_addr, 0, sizeof(serv_addr));
@@ -137,39 +105,45 @@ void *OSDMigrate::info_from_client(void *arg){
   								if(ret < 0){
   									continue;
   								}
-  								connection.insert(map<string, int>::value_type(dest, sock));
+  								pOSDMigrate->connection.insert(map<string, int>::value_type(dest, sock));
 								}
-								sock = connection[dest];
+								sock = pOSDMigrate->connection[dest];
+								file.open("/home/cloud/debug.log", ios::app);
+          			file << "sock:" << sock << '\n';
+          			file.close();
 								
-								buffer = new char[object_info_size];
-								memset(buffer, 0, object_info_size);
-								memcpy(buffer, &(*iter), object_info_size);
-								write(sock, buffer, object_info_size);
-								delete buffer;
+								pOSDMigrate->buffer = new char[object_info_size];
+								memset(pOSDMigrate->buffer, 0, object_info_size);
+								memcpy(pOSDMigrate->buffer, &(*iter), object_info_size);
+								Migrate::write_pack(sock, pOSDMigrate->buffer, object_info_size);
+								delete pOSDMigrate->buffer;
+								file.open("/home/cloud/debug.log", ios::app);
+          			file << "objectno:" << iter->objectno << " offset:" << iter->offset << " length:" << iter->length << '\n';
+          			file.close();
 								
-								bufferlist bl;
-								image.read(iter->offset, iter->length, bl);
-								buffer = new char[iter->length];
-								memset(buffer, 0, iter->length);
-								bl.copy(0, iter->length, buffer);
-								OSDMigrate::write_pack(sock, buffer, iter->length);
-								delete buffer;
+								pOSDMigrate->bl.clear();
+								pOSDMigrate->image.read(iter->offset, iter->length, pOSDMigrate->bl);
+								file.open("/home/cloud/debug.log", ios::app);
+          			file << "read image\n";
+          			file.close();
+								Migrate::write_pack(sock, pOSDMigrate->bl.c_str(), iter->length);
+								pOSDMigrate->bl.clear();
 								
 								ack = new char[sizeof(int)];
 								memset(ack, 0, sizeof(int));
-								read(sock, ack, sizeof(int));
+								Migrate::read_pack(sock, ack, sizeof(int));
 								delete ack;
 							}
-							io_ctx.close();
-							task.clear();
+							pOSDMigrate->io_ctx.close();
+							pOSDMigrate->task.clear();
 							break;
 							
 						case MIGRATE_END:
 							recv = false;
-							for(map<string, int>::iterator iter = connection.begin(); iter != connection.end(); ++iter){
+							for(map<string, int>::iterator iter = pOSDMigrate->connection.begin(); iter != pOSDMigrate->connection.end(); ++iter){
 								close(iter->second);
 							}
-							dest_addr.clear();
+							pOSDMigrate->dest_addr.clear();
 							for(unsigned int i = 0; i < pOSDMigrate->accept_incoming_sock.size(); i++){
     						close(pOSDMigrate->accept_incoming_sock[i]);
     					}
@@ -178,7 +152,7 @@ void *OSDMigrate::info_from_client(void *arg){
         	}
         	
         	int client_ack = SUCCESS;
-					write(connfd, &client_ack, sizeof(int));
+					Migrate::write_pack(connfd, &client_ack, sizeof(int));
 					if(osd_info_type == MIGRATE_END){
 						close(connfd);
 						pOSDMigrate->accept_client_sock = -1;
@@ -193,6 +167,10 @@ void *OSDMigrate::OSDMigrate_incoming(void *arg){
   int connfd = 0;
   pthread_t tid;
   while(1){
+  			pthread_attr_t attr;
+  			pthread_attr_init(&attr);
+  			size_t stack_size = (size_t)1024 * 1024 * 16;
+  			pthread_attr_setstacksize(&attr, stack_size);
   			struct sockaddr_in accept_incoming_addr;
   			socklen_t accept_incoming_addr_size = sizeof(accept_incoming_addr);
         connfd = accept(pOSDMigrate->incoming_sock, (struct sockaddr*)&(accept_incoming_addr), &accept_incoming_addr_size);
@@ -201,7 +179,7 @@ void *OSDMigrate::OSDMigrate_incoming(void *arg){
         }
         pOSDMigrate->accept_incoming_sock.push_back(connfd);
         struct connect_info *info = new struct connect_info(connfd, pOSDMigrate);
-        pthread_create(&tid, NULL, OSDMigrate_incoming_recv, (void *)info);
+        pthread_create(&tid, &attr, OSDMigrate_incoming_recv, (void *)info);
         pthread_detach(tid);
   }
   return NULL;
@@ -230,17 +208,17 @@ void *OSDMigrate::OSDMigrate_incoming_recv(void *arg){
 		struct object_info object;
 		memcpy(&object, buffer, object_info_size);
 		char *write_buf = new char[object.length];
-		OSDMigrate::read_pack(sock, write_buf, object.length);
+		Migrate::read_pack(sock, write_buf, object.length);
 		bufferlist bl;
 		bl.clear();
 		bl.append(write_buf, object.length);
+		delete write_buf;
 		image.write(object.offset, object.length, bl);
 		
 		int ack = SUCCESS;
-		write(sock, &ack, sizeof(int));
+		Migrate::write_pack(sock, &ack, sizeof(int));
 		
 		memset(buffer, 0, object_info_size);
-		delete write_buf;
 	}
 	delete buffer;
 	io_ctx.close();
@@ -252,9 +230,13 @@ void OSDMigrate::OSDMigrate_init(){
   memset(&client_addr, 0, sizeof(client_addr));
   client_addr.sin_family = AF_INET;
   client_addr.sin_port = htons(CLIENT_TO_OSD_PORT);
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+  size_t stack_size = (size_t)1024 * 1024 * 16;
+  pthread_attr_setstacksize(&attr, stack_size);
   if(bind(client_sock, (struct sockaddr *)&client_addr, sizeof(struct sockaddr)) == 0){
     listen(client_sock, CONNECT_MAX);
-    pthread_create(&client_tid, NULL, info_from_client, (void *)this);
+    pthread_create(&client_tid, &attr, info_from_client, (void *)this);
   }
 
   incoming_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -263,7 +245,7 @@ void OSDMigrate::OSDMigrate_init(){
   incoming_addr.sin_port = htons(OSD_INCOMING_PORT);
   if(bind(incoming_sock, (struct sockaddr *)&incoming_addr, sizeof(struct sockaddr)) == 0){
     listen(incoming_sock, CONNECT_MAX);
-    pthread_create(&incoming_tid, NULL, OSDMigrate_incoming, (void *)this);
+    pthread_create(&incoming_tid, &attr, OSDMigrate_incoming, (void *)this);
   }
 }
 
