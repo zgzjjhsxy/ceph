@@ -9,7 +9,6 @@ void *OSDMigrate::info_from_client(void *arg){
   OSDMigrate *pOSDMigrate = (OSDMigrate *)arg;
   int connfd = 0;
   while(1){
-  			ofstream file;
   			struct sockaddr_in accept_client_addr;
   			socklen_t accept_client_addr_size = sizeof(accept_client_addr);
         connfd = accept(pOSDMigrate->client_sock, (struct sockaddr*)&(accept_client_addr), &accept_client_addr_size);
@@ -29,29 +28,10 @@ void *OSDMigrate::info_from_client(void *arg){
         	memcpy(&osd_info_type, type, sizeof(int));
         	
         	switch(osd_info_type){
-        		case MIGRATE_INCOMING_INIT:
+        		case MIGRATE_INIT:
         			pOSDMigrate->pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
         			pOSDMigrate->image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
         			break;
-        			
-        		case MIGRATE_OUTCOMING_INIT:
-        			pOSDMigrate->pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
-        			pOSDMigrate->image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
-        			/*
-        			size = new char[sizeof(unsigned int)];
-							memset(size, 0, sizeof(unsigned int));
-							read(connfd, size, sizeof(unsigned int));
-							memcpy(&length, size, sizeof(unsigned int));
-							delete size;
-							pOSDMigrate->dest_addr.resize(length);
-							for(unsigned int i = 0; i < length; i++){
-								pOSDMigrate->dest_addr[i] = Migrate::recv_str(connfd, IP_MAX);
-								file.open("/home/cloud/debug.log", ios::app);
-          			file << "block" << i << " dest_addr:" << pOSDMigrate->dest_addr[i] << '\n';
-          			file.close();
-							}
-							*/
-							break;
 							
 						case MIGRATE_START:
 							size = new char[sizeof(unsigned int)];
@@ -59,9 +39,6 @@ void *OSDMigrate::info_from_client(void *arg){
 							Migrate::read_pack(connfd, size, sizeof(unsigned int));
 							memcpy(&length, size, sizeof(unsigned int));
 							delete size;
-							file.open("/home/cloud/debug.log", ios::app);
-          		file << "block_num:" << length << '\n';
-          		file.close();
 							
 							pOSDMigrate->task.clear();
 							pOSDMigrate->buffer = new char[object_info_size];
@@ -71,9 +48,6 @@ void *OSDMigrate::info_from_client(void *arg){
 								Migrate::read_pack(connfd, pOSDMigrate->buffer, object_info_size);
 								memcpy(&temp, pOSDMigrate->buffer, object_info_size);
 								pOSDMigrate->task.push_back(temp);
-								file.open("/home/cloud/debug.log", ios::app);
-          			file << "objectno:" << pOSDMigrate->task.back().objectno << " offset:" << pOSDMigrate->task.back().offset << " length:" << pOSDMigrate->task.back().length << " dest_addr:" << pOSDMigrate->task.back().dest_ip << '\n';
-          			file.close();
 							}
 							delete pOSDMigrate->buffer;
 
@@ -85,14 +59,7 @@ void *OSDMigrate::info_from_client(void *arg){
 							
 							for(list<object_info>::iterator iter = pOSDMigrate->task.begin(); iter != pOSDMigrate->task.end(); ++iter){
 								int sock;
-								file.open("/home/cloud/debug.log", ios::app);
-          			file << "block" << iter->objectno;
-          			file.close();
-								//string dest = pOSDMigrate->dest_addr[iter->objectno];
 								string dest = iter->dest_ip;
-								file.open("/home/cloud/debug.log", ios::app);
-          			file << " dest:" << dest << '\n';
-          			file.close();
 								map<string, int>::iterator is_connect = pOSDMigrate->connection.find(dest);
 								if(is_connect == pOSDMigrate->connection.end()){
 									sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -108,24 +75,15 @@ void *OSDMigrate::info_from_client(void *arg){
   								pOSDMigrate->connection.insert(map<string, int>::value_type(dest, sock));
 								}
 								sock = pOSDMigrate->connection[dest];
-								file.open("/home/cloud/debug.log", ios::app);
-          			file << "sock:" << sock << '\n';
-          			file.close();
 								
 								pOSDMigrate->buffer = new char[object_info_size];
 								memset(pOSDMigrate->buffer, 0, object_info_size);
 								memcpy(pOSDMigrate->buffer, &(*iter), object_info_size);
 								Migrate::write_pack(sock, pOSDMigrate->buffer, object_info_size);
 								delete pOSDMigrate->buffer;
-								file.open("/home/cloud/debug.log", ios::app);
-          			file << "objectno:" << iter->objectno << " offset:" << iter->offset << " length:" << iter->length << '\n';
-          			file.close();
 								
 								pOSDMigrate->bl.clear();
 								pOSDMigrate->image.read(iter->offset, iter->length, pOSDMigrate->bl);
-								file.open("/home/cloud/debug.log", ios::app);
-          			file << "read image\n";
-          			file.close();
 								Migrate::write_pack(sock, pOSDMigrate->bl.c_str(), iter->length);
 								pOSDMigrate->bl.clear();
 								

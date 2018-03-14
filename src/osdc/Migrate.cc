@@ -111,25 +111,9 @@ void *Migrate::info_to_osd(void *arg){
 	delete type;
 	
 	switch(pMigrate->osd_info_type){
-		case MIGRATE_INCOMING_INIT:
+		case MIGRATE_INIT:
 			send_str(sock, pool_name, MAX_POOL_NAME_SIZE);
 			send_str(sock, image_name, RBD_MAX_IMAGE_NAME_SIZE);
-			break;
-			
-		case MIGRATE_OUTCOMING_INIT:
-			send_str(sock, pool_name, MAX_POOL_NAME_SIZE);
-			send_str(sock, image_name, RBD_MAX_IMAGE_NAME_SIZE);
-			/*
-			length = dest_addr.size();
-			size = new char[sizeof(unsigned int)];
-			memset(size, 0, sizeof(unsigned int));
-			memcpy(size, &length, sizeof(unsigned int));
-			write_pack(sock, size, sizeof(unsigned int));
-			delete size;
-			for(unsigned int i = 0; i < length; i++){
-				send_str(sock, dest_addr[i], IP_MAX);
-			}
-			*/
 			break;
 			
 		case MIGRATE_START:
@@ -192,7 +176,7 @@ int Migrate::addr_locate(ImageCtx *ictx, uint64_t offset, uint64_t length){
     	if(buf.empty()){
     		continue;
     	}
-    	int osd;
+    	uint64_t osd;
     	string ip;
       istringstream sin(buf);
       sin >> osd >> ip;
@@ -209,14 +193,14 @@ int Migrate::addr_locate(ImageCtx *ictx, uint64_t offset, uint64_t length){
     for (vector<ObjectExtent>::iterator q = p->second.begin(); q != p->second.end(); ++q){
       Objecter::op_target_t *target = new struct Objecter::op_target_t(q->oid, q->oloc, CEPH_OSD_FLAG_LOCATE);
       ictx->data_ctx.get_io_ctx_impl()->objecter->calc_target(target);
-      if(target->osd < osd_addr.size() && !osd_addr[target->osd].empty()){
+      if((uint64_t)(target->osd) < osd_addr.size() && !osd_addr[target->osd].empty()){
         addr.push_back(osd_addr[target->osd]);
       }else{
         entity_inst_t dest = ictx->data_ctx.get_io_ctx_impl()->objecter->get_osdmap()->get_inst(target->osd);
         char *my_addr = inet_ntoa(((sockaddr_in *)&dest.addr.addr)->sin_addr);
         string str_my_addr = my_addr;
         addr.push_back(str_my_addr);
-        if(target->osd >= osd_addr.size()){
+        if((uint64_t)(target->osd) >= osd_addr.size()){
         	osd_addr.resize(target->osd + 1);
         }
         osd_addr[target->osd] = str_my_addr;
@@ -252,8 +236,10 @@ int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_s
   int migrate_flag = SUCCESS;
   if(size_info->source_size > size){
     migrate_flag = SIZE_ERROR;
+    std::cout << "target image size is too small" << std::endl;
   }else if(size_info->source_obj_size != obj_size){
     migrate_flag = OBJ_SIZE_ERROR;
+    std::cout << "object size of two images must be same" << std::endl;
   }
   write_pack(outcoming_sock, &migrate_flag, sizeof(int));
   if(migrate_flag == SUCCESS){
@@ -266,7 +252,7 @@ int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_s
     }
     osd_tid.clear();
     osd_sock.clear();
-    osd_info_type = MIGRATE_INCOMING_INIT;
+    osd_info_type = MIGRATE_INIT;
     for(unsigned int i = 0; i < osd_addr.size(); i++){
     	if(!osd_addr[i].empty()){
     		connect_to_osd(i);
@@ -313,6 +299,11 @@ int Migrate::migrate_outcoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_
   read_pack(sock, &migrate_flag, sizeof(int));
 
   if(migrate_flag != SUCCESS){
+  	if(migrate_flag == SIZE_ERROR){
+  		std::cout << "target image size is too small" << std::endl;
+  	}else if(migrate_flag == OBJ_SIZE_ERROR){
+  		std::cout << "object size of two images must be same" << std::endl;
+  	}
     close(sock);
     exit(1);
   }else{
@@ -322,14 +313,13 @@ int Migrate::migrate_outcoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_
     for(uint64_t i = 0; i < obj_nums; i++){
       string temp_addr = recv_str(sock, IP_MAX);
       dest_addr[i] = temp_addr;
-      //std::cout << "block" << i << "dest_addr:" << dest_addr[i] << std::endl;
     }
     pool_name = ictx->data_ctx.get_pool_name();
     image_name = ictx->name;
     addr_locate(ictx, 0, size);
     osd_tid.clear();
     osd_sock.clear();
-    osd_info_type = MIGRATE_OUTCOMING_INIT;
+    osd_info_type = MIGRATE_INIT;
     for(unsigned int i = 0; i < osd_addr.size(); i++){
     	if(!osd_addr[i].empty()){
     		connect_to_osd(i);

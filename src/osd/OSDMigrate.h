@@ -14,13 +14,6 @@ struct connect_info{
 	connect_info(int c, OSDMigrate *p) : connfd(c), pOSDMigrate(p) {}
 };
 
-struct migrate_info{
-  uint64_t offset;
-  uint64_t length;
-  migrate_info() : offset(0), length(0) {}
-  migrate_info(uint64_t off, uint64_t len) : offset(off), length(len) {}
-};
-
 class OSDMigrate{
   public:
   	CephContext *OSDcct;

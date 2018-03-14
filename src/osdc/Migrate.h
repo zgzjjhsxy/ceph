@@ -29,10 +29,9 @@
 #define SIZE_ERROR 1
 #define OBJ_SIZE_ERROR 2
 
-#define MIGRATE_INCOMING_INIT	1
-#define MIGRATE_OUTCOMING_INIT 2
-#define MIGRATE_START 3
-#define MIGRATE_END 4
+#define MIGRATE_INIT	1
+#define MIGRATE_START 2
+#define MIGRATE_END 3
 
 using librbd::ImageCtx;
 using std::vector;
