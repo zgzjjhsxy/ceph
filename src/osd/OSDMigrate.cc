@@ -31,6 +31,11 @@ void *OSDMigrate::info_from_client(void *arg){
         		case MIGRATE_INIT:
         			pOSDMigrate->pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
         			pOSDMigrate->image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
+        			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
+        			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
+        			pOSDMigrate->cluster.connect();
+        			pOSDMigrate->cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), pOSDMigrate->io_ctx);
+        			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, pOSDMigrate->image_name.c_str());
         			break;
 							
 						case MIGRATE_START:
@@ -50,12 +55,6 @@ void *OSDMigrate::info_from_client(void *arg){
 								pOSDMigrate->task.push_back(temp);
 							}
 							delete pOSDMigrate->buffer;
-
-  						pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
-        			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			pOSDMigrate->cluster.connect();
-        			pOSDMigrate->cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), pOSDMigrate->io_ctx);
-        			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, pOSDMigrate->image_name.c_str());
 							
 							for(list<object_info>::iterator iter = pOSDMigrate->task.begin(); iter != pOSDMigrate->task.end(); ++iter){
 								int sock;
@@ -92,12 +91,12 @@ void *OSDMigrate::info_from_client(void *arg){
 								Migrate::read_pack(sock, ack, sizeof(int));
 								delete ack;
 							}
-							pOSDMigrate->io_ctx.close();
 							pOSDMigrate->task.clear();
 							break;
 							
 						case MIGRATE_END:
 							recv = false;
+							pOSDMigrate->io_ctx.close();
 							for(map<string, int>::iterator iter = pOSDMigrate->connection.begin(); iter != pOSDMigrate->connection.end(); ++iter){
 								close(iter->second);
 							}

@@ -368,7 +368,7 @@ int Migrate::migrate_outcoming_start(ImageCtx *ictx, uint64_t offset, uint64_t l
       	osd_task.insert(map<string, list<object_info> >::value_type(ip, list<object_info>()));
       }
       for(vector<pair<uint64_t,uint64_t> >::iterator r = q->buffer_extents.begin(); r != q->buffer_extents.end(); ++r){
-      	struct object_info temp(q->objectno, r->first, r->second, dest_addr[q->objectno]);
+      	struct object_info temp(q->objectno, offset + r->first, r->second, dest_addr[q->objectno]);
       	osd_task[ip].push_back(temp);
       }
       
