@@ -27,11 +27,6 @@ class OSDMigrate{
   	vector<string> dest_addr;
   	list<object_info> task;
   	map<string, int> connection;
-  	char *buffer;
- 		librados::Rados cluster;
-   	librados::IoCtx io_ctx;
-   	librbd::RBD rbd_inst;
-   	librbd::Image image;
   	bufferlist bl;
 
     void OSDMigrate_init();

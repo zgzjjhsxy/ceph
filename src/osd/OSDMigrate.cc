@@ -20,8 +20,13 @@ void *OSDMigrate::info_from_client(void *arg){
         int recv_len = 0;
         bool recv = true;
   			unsigned int length = 0, object_info_size = sizeof(struct object_info);
-  			char *type = new char[sizeof(int)], *size, *ack;
+  			char *type = new char[sizeof(int)], *size, *ack, *buffer;
 				memset(type, 0, sizeof(int));
+				
+				librados::Rados cluster;
+   			librados::IoCtx io_ctx;
+   			librbd::RBD rbd_inst;
+   			librbd::Image image;
 
         while(recv && (recv_len = read(connfd, type, sizeof(int))) > 0){
         	int osd_info_type;
@@ -31,11 +36,11 @@ void *OSDMigrate::info_from_client(void *arg){
         		case MIGRATE_INIT:
         			pOSDMigrate->pool_name = Migrate::recv_str(connfd, MAX_POOL_NAME_SIZE);
         			pOSDMigrate->image_name = Migrate::recv_str(connfd, RBD_MAX_IMAGE_NAME_SIZE);
-        			pOSDMigrate->cluster.init_with_context(pOSDMigrate->OSDcct);
-        			pOSDMigrate->cluster.conf_read_file("/etc/ceph/ceph.conf");
-        			pOSDMigrate->cluster.connect();
-        			pOSDMigrate->cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), pOSDMigrate->io_ctx);
-        			pOSDMigrate->rbd_inst.open(pOSDMigrate->io_ctx, pOSDMigrate->image, pOSDMigrate->image_name.c_str());
+        			cluster.init_with_context(pOSDMigrate->OSDcct);
+        			cluster.conf_read_file("/etc/ceph/ceph.conf");
+        			cluster.connect();
+        			cluster.ioctx_create(pOSDMigrate->pool_name.c_str(), io_ctx);
+        			rbd_inst.open(io_ctx, image, pOSDMigrate->image_name.c_str());
         			break;
 							
 						case MIGRATE_START:
@@ -46,15 +51,15 @@ void *OSDMigrate::info_from_client(void *arg){
 							delete size;
 							
 							pOSDMigrate->task.clear();
-							pOSDMigrate->buffer = new char[object_info_size];
+							buffer = new char[object_info_size];
 							for(unsigned int i = 0; i < length; i++){
 								object_info temp;
-								memset(pOSDMigrate->buffer, 0, object_info_size);
-								Migrate::read_pack(connfd, pOSDMigrate->buffer, object_info_size);
-								memcpy(&temp, pOSDMigrate->buffer, object_info_size);
+								memset(buffer, 0, object_info_size);
+								Migrate::read_pack(connfd, buffer, object_info_size);
+								memcpy(&temp, buffer, object_info_size);
 								pOSDMigrate->task.push_back(temp);
 							}
-							delete pOSDMigrate->buffer;
+							delete buffer;
 							
 							for(list<object_info>::iterator iter = pOSDMigrate->task.begin(); iter != pOSDMigrate->task.end(); ++iter){
 								int sock;
@@ -75,14 +80,14 @@ void *OSDMigrate::info_from_client(void *arg){
 								}
 								sock = pOSDMigrate->connection[dest];
 								
-								pOSDMigrate->buffer = new char[object_info_size];
-								memset(pOSDMigrate->buffer, 0, object_info_size);
-								memcpy(pOSDMigrate->buffer, &(*iter), object_info_size);
-								Migrate::write_pack(sock, pOSDMigrate->buffer, object_info_size);
-								delete pOSDMigrate->buffer;
+								buffer = new char[object_info_size];
+								memset(buffer, 0, object_info_size);
+								memcpy(buffer, &(*iter), object_info_size);
+								Migrate::write_pack(sock, buffer, object_info_size);
+								delete buffer;
 								
 								pOSDMigrate->bl.clear();
-								pOSDMigrate->image.read(iter->offset, iter->length, pOSDMigrate->bl);
+								image.read(iter->offset, iter->length, pOSDMigrate->bl);
 								Migrate::write_pack(sock, pOSDMigrate->bl.c_str(), iter->length);
 								pOSDMigrate->bl.clear();
 								
@@ -96,7 +101,7 @@ void *OSDMigrate::info_from_client(void *arg){
 							
 						case MIGRATE_END:
 							recv = false;
-							pOSDMigrate->io_ctx.close();
+							io_ctx.close();
 							for(map<string, int>::iterator iter = pOSDMigrate->connection.begin(); iter != pOSDMigrate->connection.end(); ++iter){
 								close(iter->second);
 							}
