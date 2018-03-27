@@ -4,8 +4,7 @@
 #include "librados/IoCtxImpl.h"
 #include "msg/msg_types.h"
 
-vector<string> Migrate::addr;
-vector<string> Migrate::dest_addr;
+vector<string> Migrate::dest_osd_addr;
 vector<string> Migrate::osd_addr;
 map<string, pthread_t> Migrate::osd_tid;
 map<string, int> Migrate::osd_sock;
@@ -19,6 +18,16 @@ void Migrate::osd_task_clear(){
     iter->second.clear();
   }
   osd_task.clear();
+}
+
+string Migrate::choose_dest_addr(){
+	uint64_t osd_nums = osd_addr.size();
+	srand((unsigned)time(NULL));
+	string res;
+	if(osd_nums > 0){
+		res = osd_addr[rand() % osd_nums];
+	}
+	return res;
 }
 
 int64_t Migrate::read_pack(int sockfd, void *buf, uint64_t len){
@@ -102,13 +111,9 @@ void *Migrate::info_to_osd(void *arg){
 	Migrate *pMigrate = info->pMigrate;
 	int sock = pMigrate->osd_sock[osd];
 	unsigned int length = 0, object_info_size = sizeof(struct object_info);
-	char *size, *buffer;
+	char *buffer;
 	
-	char *type = new char[sizeof(int)];
-	memset(type, 0, sizeof(int));
-	memcpy(type, &(pMigrate->osd_info_type), sizeof(int));
-	write_pack(sock, type, sizeof(int));
-	delete type;
+	write_pack(sock, &(pMigrate->osd_info_type), sizeof(int));
 	
 	switch(pMigrate->osd_info_type){
 		case MIGRATE_INIT:
@@ -118,11 +123,7 @@ void *Migrate::info_to_osd(void *arg){
 			
 		case MIGRATE_START:
 			length = osd_task[osd].size();
-			size = new char[sizeof(unsigned int)];
-			memset(size, 0, sizeof(unsigned int));
-			memcpy(size, &length, sizeof(unsigned int));
-			write_pack(sock, size, sizeof(unsigned int));
-			delete size;
+			write_pack(sock, &length, sizeof(unsigned int));
 			
 			buffer = new char[object_info_size];
 			list<object_info>::iterator iter = osd_task[osd].begin();
@@ -148,15 +149,11 @@ void *Migrate::info_to_osd(void *arg){
 	return NULL;
 }
 
-int Migrate::addr_locate(ImageCtx *ictx, uint64_t size){
-	return addr_locate(ictx, 0, size);
-}
-
-int Migrate::addr_locate(ImageCtx *ictx, uint64_t offset, uint64_t length){
+int Migrate::osd_locate(ImageCtx *ictx, uint64_t length){
   map<object_t,vector<ObjectExtent> > object_extents;
   uint64_t buffer_ofs = 0;
   vector<pair<uint64_t,uint64_t> > image_extents;
-  image_extents.push_back(make_pair(offset, length));
+  image_extents.push_back(make_pair(0, length));
   CephContext *cct = ictx->cct;
   for(vector<pair<uint64_t,uint64_t> >::const_iterator p = image_extents.begin(); p != image_extents.end(); ++p){
   	uint64_t len = p->second;
@@ -165,6 +162,21 @@ int Migrate::addr_locate(ImageCtx *ictx, uint64_t offset, uint64_t length){
     }
     Striper::file_to_extents(cct, ictx->format_string, &ictx->layout, p->first, len, 0, object_extents, buffer_ofs);
     buffer_ofs += len;
+  }
+  
+  for(map<object_t,vector<ObjectExtent> >::iterator p = object_extents.begin(); p != object_extents.end(); ++p){
+    for (vector<ObjectExtent>::iterator q = p->second.begin(); q != p->second.end(); ++q){
+      Objecter::op_target_t *target = new struct Objecter::op_target_t(q->oid, q->oloc, CEPH_OSD_FLAG_LOCATE);
+      ictx->data_ctx.get_io_ctx_impl()->objecter->calc_target(target);
+      entity_inst_t dest = ictx->data_ctx.get_io_ctx_impl()->objecter->get_osdmap()->get_inst(target->osd);
+      char *my_addr = inet_ntoa(((sockaddr_in *)&dest.addr.addr)->sin_addr);
+      string str_my_addr = my_addr;
+      if((uint64_t)(target->osd) >= osd_addr.size()){
+        	osd_addr.resize(target->osd + 1);
+      }
+      osd_addr[target->osd] = str_my_addr;
+      delete target;
+    }
   }
   
   ifstream file;
@@ -187,32 +199,11 @@ int Migrate::addr_locate(ImageCtx *ictx, uint64_t offset, uint64_t length){
     }
     file.close();
   }
-  
-  addr.clear();
-  for(map<object_t,vector<ObjectExtent> >::iterator p = object_extents.begin(); p != object_extents.end(); ++p){
-    for (vector<ObjectExtent>::iterator q = p->second.begin(); q != p->second.end(); ++q){
-      Objecter::op_target_t *target = new struct Objecter::op_target_t(q->oid, q->oloc, CEPH_OSD_FLAG_LOCATE);
-      ictx->data_ctx.get_io_ctx_impl()->objecter->calc_target(target);
-      if((uint64_t)(target->osd) < osd_addr.size() && !osd_addr[target->osd].empty()){
-        addr.push_back(osd_addr[target->osd]);
-      }else{
-        entity_inst_t dest = ictx->data_ctx.get_io_ctx_impl()->objecter->get_osdmap()->get_inst(target->osd);
-        char *my_addr = inet_ntoa(((sockaddr_in *)&dest.addr.addr)->sin_addr);
-        string str_my_addr = my_addr;
-        addr.push_back(str_my_addr);
-        if((uint64_t)(target->osd) >= osd_addr.size()){
-        	osd_addr.resize(target->osd + 1);
-        }
-        osd_addr[target->osd] = str_my_addr;
-      }
-      delete target;
-    }
-  }
   return 0;
 }
 
 
-int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_size){
+int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size){
   int incoming_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   struct sockaddr_in incoming_addr, outcoming_addr;
   memset(&incoming_addr, 0, sizeof(incoming_addr));
@@ -220,40 +211,36 @@ int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_s
   incoming_addr.sin_port = htons(CLIENT_INCOMING_PORT);
   if(bind(incoming_sock, (struct sockaddr *)&incoming_addr, sizeof(struct sockaddr))==-1){
     std::cout << "port " << CLIENT_INCOMING_PORT << " bind error" << std::endl;
-    exit(1);
+    return -1;
   }
   listen(incoming_sock, CONNECT_MAX);
-
   socklen_t outcoming_addr_size = sizeof(outcoming_addr);
   int outcoming_sock = accept(incoming_sock, (struct sockaddr*)&outcoming_addr, &outcoming_addr_size);
-  int migrate_init_info_size = sizeof(struct migrate_init_info);
-  char buffer[migrate_init_info_size];
-  memset(buffer, 0, migrate_init_info_size);
-  read_pack(outcoming_sock, buffer, migrate_init_info_size);
-  size_info = new struct migrate_init_info;
-  memcpy(size_info, buffer, migrate_init_info_size);
+  
+  uint64_t source_size;
+  read_pack(outcoming_sock, &source_size, sizeof(uint64_t));
 
   int migrate_flag = SUCCESS;
-  if(size_info->source_size > size){
+  if(source_size > size){
     migrate_flag = SIZE_ERROR;
     std::cout << "target image size is too small" << std::endl;
-  }else if(size_info->source_obj_size != obj_size){
-    migrate_flag = OBJ_SIZE_ERROR;
-    std::cout << "object size of two images must be same" << std::endl;
   }
   write_pack(outcoming_sock, &migrate_flag, sizeof(int));
   if(migrate_flag == SUCCESS){
     pool_name = ictx->data_ctx.get_pool_name();
     image_name = ictx->name;
-    addr_locate(ictx, 0, size);
-    uint64_t obj_nums = size_info->source_size / size_info->source_obj_size;
-    for(uint64_t i = 0; i < obj_nums; i++){
-      send_str(outcoming_sock, addr[i], IP_MAX);
+    osd_locate(ictx, size);
+    
+    uint64_t osd_nums = osd_addr.size();
+    write_pack(outcoming_sock, &osd_nums, sizeof(uint64_t));
+    
+    for(uint64_t i = 0; i < osd_nums; i++){
+      send_str(outcoming_sock, osd_addr[i], IP_MAX);
     }
     osd_tid.clear();
     osd_sock.clear();
     osd_info_type = MIGRATE_INIT;
-    for(unsigned int i = 0; i < osd_addr.size(); i++){
+    for(unsigned int i = 0; i < osd_nums; i++){
     	if(!osd_addr[i].empty()){
     		connect_to_osd(i);
     	}
@@ -272,51 +259,46 @@ int Migrate::migrate_incoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_s
     osd_tid.clear();
     close(incoming_sock);
   	close(outcoming_sock);
+  	return 0;
   }else{
   	close(incoming_sock);
   	close(outcoming_sock);
-  	exit(1);
+  	return -1;
   }
-  return 0;
 }
 
-int Migrate::migrate_outcoming_init(ImageCtx *ictx, uint64_t size, uint64_t obj_size, char *ip){
+int Migrate::migrate_outcoming_init(ImageCtx *ictx, uint64_t size, const char *ip){
   int sock = socket(AF_INET, SOCK_STREAM, 0);
   struct sockaddr_in serv_addr;
   memset(&serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port=htons(CLIENT_INCOMING_PORT);
   serv_addr.sin_addr.s_addr = inet_addr(ip);
-  connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+  int ret = connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+  if(ret < 0){
+  	return -1;
+  }
 
-  size_info = new migrate_init_info(size, obj_size);
-  int migrate_init_info_size = sizeof(struct migrate_init_info);
-  char buffer[migrate_init_info_size];
-  memcpy(buffer, size_info, migrate_init_info_size);
-  write_pack(sock, buffer, migrate_init_info_size);
-
+  write_pack(sock, &size, sizeof(uint64_t));
   int migrate_flag;
   read_pack(sock, &migrate_flag, sizeof(int));
 
   if(migrate_flag != SUCCESS){
-  	if(migrate_flag == SIZE_ERROR){
-  		std::cout << "target image size is too small" << std::endl;
-  	}else if(migrate_flag == OBJ_SIZE_ERROR){
-  		std::cout << "object size of two images must be same" << std::endl;
-  	}
+  	std::cout << "target image size is too small" << std::endl;
     close(sock);
-    exit(1);
+    return -1;
   }else{
-    uint64_t obj_nums = size / obj_size;
-    dest_addr.clear();
-    dest_addr.resize(obj_nums);
-    for(uint64_t i = 0; i < obj_nums; i++){
+    uint64_t dest_osd_nums = 0;
+    read_pack(sock, &dest_osd_nums, sizeof(uint64_t));
+    dest_osd_addr.clear();
+    dest_osd_addr.resize(dest_osd_nums);
+    for(uint64_t i = 0; i < dest_osd_nums; i++){
       string temp_addr = recv_str(sock, IP_MAX);
-      dest_addr[i] = temp_addr;
+      dest_osd_addr[i] = temp_addr;
     }
     pool_name = ictx->data_ctx.get_pool_name();
     image_name = ictx->name;
-    addr_locate(ictx, 0, size);
+    osd_locate(ictx, size);
     osd_tid.clear();
     osd_sock.clear();
     osd_info_type = MIGRATE_INIT;
@@ -368,10 +350,10 @@ int Migrate::migrate_outcoming_start(ImageCtx *ictx, uint64_t offset, uint64_t l
       	osd_task.insert(map<string, list<object_info> >::value_type(ip, list<object_info>()));
       }
       for(vector<pair<uint64_t,uint64_t> >::iterator r = q->buffer_extents.begin(); r != q->buffer_extents.end(); ++r){
-      	struct object_info temp(q->objectno, offset + r->first, r->second, dest_addr[q->objectno]);
+      	string dest = choose_dest_addr();
+      	struct object_info temp(offset + r->first, r->second, dest);
       	osd_task[ip].push_back(temp);
       }
-      
     }
   }
   
@@ -424,8 +406,7 @@ int Migrate::migrate_end(){
   osd_sock.clear();
   
   osd_task_clear();
-  addr.clear();
-  dest_addr.clear();
+  dest_osd_addr.clear();
   osd_addr.clear();
   osd_info_type = 0;
   pool_name.clear();

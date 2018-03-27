@@ -1038,22 +1038,20 @@ namespace librbd {
   {
     Migrate *pMigrate = new Migrate;
     ImageCtx *ictx = (ImageCtx *)ctx;
-    image_info_t *info = new image_info_t;
-    this->stat(*info, 0);
-    int r = pMigrate->migrate_incoming_init(ictx, info->size, info->obj_size);
-    delete info;
+    uint64_t image_size;
+    this->size(&image_size);
+    int r = pMigrate->migrate_incoming_init(ictx, image_size);
     delete pMigrate;
     return r;
   }
 
-  int Image::migrate_outcoming_init(char *ip)
+  int Image::migrate_outcoming_init(const char *ip)
   {
     Migrate *pMigrate = new Migrate;
     ImageCtx *ictx = (ImageCtx *)ctx;
-    image_info_t *info = new image_info_t;
-    this->stat(*info, 0);
-    int r = pMigrate->migrate_outcoming_init(ictx, info->size, info->obj_size, ip);
-    delete info;
+    uint64_t image_size;
+    this->size(&image_size);
+    int r = pMigrate->migrate_outcoming_init(ictx, image_size, ip);
     delete pMigrate;
     return r;
   }
@@ -2130,4 +2128,41 @@ extern "C" void rbd_aio_release(rbd_completion_t c)
 {
   librbd::RBD::AioCompletion *comp = (librbd::RBD::AioCompletion *)c;
   comp->release();
+}
+
+extern "C" int rbd_migrate_incoming_init(rbd_image_t image){
+  librbd::ImageCtx *ictx = (librbd::ImageCtx *)image;
+  Migrate *pMigrate = new Migrate;
+  uint64_t image_size;
+  rbd_get_size(image, &image_size);
+  int r = pMigrate->migrate_incoming_init(ictx, image_size);
+  delete pMigrate;
+  return r;
+}
+
+extern "C" int rbd_migrate_outcoming_init(rbd_image_t image, const char *ip){
+  librbd::ImageCtx *ictx = (librbd::ImageCtx *)image;
+  Migrate *pMigrate = new Migrate;
+  uint64_t image_size;
+  rbd_get_size(image, &image_size);
+  int r = pMigrate->migrate_outcoming_init(ictx, image_size, ip);
+  delete pMigrate;
+  return r;
+}
+
+extern "C" int rbd_migrate_outcoming_start(rbd_image_t image, uint64_t offset, uint64_t length)
+{
+  librbd::ImageCtx *ictx = (librbd::ImageCtx *)image;
+  Migrate *pMigrate = new Migrate;
+  int r = pMigrate->migrate_outcoming_start(ictx, offset, length);
+  delete pMigrate;
+  return r;
+}
+
+extern "C" int rbd_migrate_end()
+{
+  Migrate *pMigrate = new Migrate;
+  int r = pMigrate->migrate_end();
+  delete pMigrate;
+  return r;
 }

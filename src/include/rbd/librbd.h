@@ -485,6 +485,11 @@ CEPH_RBD_API int rbd_metadata_remove(rbd_image_t image, const char *key);
  */
 CEPH_RBD_API int rbd_metadata_list(rbd_image_t image, const char *start, uint64_t max,
     char *keys, size_t *key_len, char *values, size_t *vals_len);
+    
+CEPH_RBD_API int rbd_migrate_incoming_init(rbd_image_t image);
+CEPH_RBD_API int rbd_migrate_outcoming_init(rbd_image_t image, const char *ip);
+CEPH_RBD_API int rbd_migrate_outcoming_start(rbd_image_t image, uint64_t offset, uint64_t length);
+CEPH_RBD_API int rbd_migrate_end();
 
 
 #ifdef __cplusplus

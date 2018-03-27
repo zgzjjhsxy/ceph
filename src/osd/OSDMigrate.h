@@ -14,6 +14,13 @@ struct connect_info{
 	connect_info(int c, OSDMigrate *p) : connfd(c), pOSDMigrate(p) {}
 };
 
+struct task_info{
+	string dest_addr;
+	OSDMigrate *pOSDMigrate;
+	task_info() {}
+	task_info(string da, OSDMigrate *p) : dest_addr(da), pOSDMigrate(p) {}
+};
+
 class OSDMigrate{
   public:
   	CephContext *OSDcct;
@@ -24,15 +31,15 @@ class OSDMigrate{
     struct sockaddr_in client_addr, incoming_addr;
   	string pool_name, image_name;
   	
-  	vector<string> dest_addr;
-  	list<object_info> task;
+  	map<string, list<object_info> > task;
   	map<string, int> connection;
-  	bufferlist bl;
 
     void OSDMigrate_init();
     static void *info_from_client(void *arg);
+    static void *do_task(void *arg);
     static void *OSDMigrate_incoming(void *arg);
     static void *OSDMigrate_incoming_recv(void *arg);
+    static void task_clear(OSDMigrate *pOSDMigrate);
 
     OSDMigrate(CephContext *cct){
       OSDcct = cct;
