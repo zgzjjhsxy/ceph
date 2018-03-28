@@ -86,7 +86,7 @@ void *OSDMigrate::info_from_client(void *arg){
 							for(unsigned int i = 0; i < task_tid.size(); i++){
 								pthread_join(task_tid[i], NULL);
 							}
-								
+							task_tid.clear();
 							task_clear(pOSDMigrate);
 							break;
 							
@@ -140,12 +140,12 @@ void *OSDMigrate::do_task(void *arg){
   	memset(buffer, 0, object_info_size);
 		memcpy(buffer, &(*iter), object_info_size);
 		Migrate::write_pack(sock, buffer, object_info_size);
-		++iter;
 		
 		bl.clear();
 		image.read(iter->offset, iter->length, bl);
 		Migrate::write_pack(sock, bl.c_str(), iter->length);
 		bl.clear();
+		++iter;
 								
 		Migrate::read_pack(sock, &ack, sizeof(int));
   }

@@ -21,11 +21,11 @@ void Migrate::osd_task_clear(){
 }
 
 string Migrate::choose_dest_addr(){
-	uint64_t osd_nums = osd_addr.size();
+	uint64_t osd_nums = dest_osd_addr.size();
 	srand((unsigned)time(NULL));
 	string res;
 	if(osd_nums > 0){
-		res = osd_addr[rand() % osd_nums];
+		res = dest_osd_addr[rand() % osd_nums];
 	}
 	return res;
 }
