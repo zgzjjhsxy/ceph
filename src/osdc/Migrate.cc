@@ -22,10 +22,11 @@ void Migrate::osd_task_clear(){
 
 string Migrate::choose_dest_addr(){
 	uint64_t osd_nums = dest_osd_addr.size();
-	srand((unsigned)time(NULL));
 	string res;
+	int pos;
 	if(osd_nums > 0){
-		res = dest_osd_addr[rand() % osd_nums];
+		pos = rand() % osd_nums;
+		res = dest_osd_addr[pos];
 	}
 	return res;
 }
@@ -340,6 +341,7 @@ int Migrate::migrate_outcoming_start(ImageCtx *ictx, uint64_t offset, uint64_t l
   }
   
   osd_task_clear();
+  srand((unsigned)time(NULL));
   for(map<object_t,vector<ObjectExtent> >::iterator p = object_extents.begin(); p != object_extents.end(); ++p){
     for (vector<ObjectExtent>::iterator q = p->second.begin(); q != p->second.end(); ++q){
       Objecter::op_target_t *target = new struct Objecter::op_target_t(q->oid, q->oloc, CEPH_OSD_FLAG_LOCATE);
